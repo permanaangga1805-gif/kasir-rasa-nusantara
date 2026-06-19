@@ -1,0 +1,34 @@
+name: Deploy ke GitHub Pages Otomatis
+
+on:
+  push:
+    branches:
+      - main  # ⚠️ Ganti jadi 'master' jika nama branch utama Anda masih 'master'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Project
+        run: npm run build
+
+      - name: Deploy ke GitHub Pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: dist # Folder hasil build Vite
+          branch: gh-pages # Branch tujuan deployment website
