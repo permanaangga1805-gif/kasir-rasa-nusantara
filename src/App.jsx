@@ -32,6 +32,7 @@ const INITIAL_SETTINGS = {
   storePhone: "085892358884",
   taxRate: 0,
   footerNote: "Terima kasih atas kunjungan Anda!",
+  qrisUrl: "",
 };
 
 function load(key, fallback) {
@@ -50,8 +51,7 @@ const S = {
   qBtn: { background: "#edf2f7", border: "none", borderRadius: 6, width: 26, height: 26, cursor: "pointer", fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" },
 };
 
-// ── RECEIPT MODAL ────────────────────────────────────────────────────────────
-// ── RECEIPT MODAL DENGAN FITUR KIRIM WHATSAPP ──
+// ── RECEIPT MODAL DENGAN QRIS & FITUR KIRIM WHATSAPP ──
 function ReceiptModal({ order, settings, onClose }) {
   const ref = useRef();
   const [customerPhone, setCustomerPhone] = useState("");
@@ -62,7 +62,8 @@ function ReceiptModal({ order, settings, onClose }) {
     win.document.write(`
       <html><head><title>Struk #${order.customId || String(order.id).slice(-6)}</title>
       <style>
-        body { font-family: monospace; font-size: 13px; max-width: 300px; margin: 0 auto; padding: 16px; }
+        body { font-family: monospace; font-size: 13px; max-width: 300px; margin: 0 auto; padding: 16px; text-align: center; }
+        .left { text-align: left; }
         .center { text-align: center; } .bold { font-weight: bold; }
         .row { display: flex; justify-content: space-between; margin-bottom: 4px; }
         .dashed { border-top: 1px dashed #999; margin: 10px 0; padding-top: 10px; }
@@ -72,20 +73,17 @@ function ReceiptModal({ order, settings, onClose }) {
     win.document.close();
   };
 
-  // ── LOGIK FORMAT TEKS UNTUK WHATSAPP ──
   const handleSendWhatsApp = () => {
     if (!customerPhone) {
       alert("Silakan masukkan nomor WhatsApp pelanggan terlebih dahulu!");
       return;
     }
 
-    // Format nomor HP agar diawali dengan 62 (standar Indonesia)
     let formattedPhone = customerPhone.replace(/[^0-9]/g, "");
     if (formattedPhone.startsWith("0")) {
       formattedPhone = "62" + formattedPhone.slice(1);
     }
 
-    // Susun teks struk belanja memakai format teks WhatsApp (*bold*, _italic_, enter)
     let text = `*✨ STRUK BELANJA - ${settings.storeName} ✨*\n`;
     text += `_${settings.storeAddress}_\n`;
     text += `📞 No. Telp: ${settings.storePhone}\n`;
@@ -95,7 +93,6 @@ function ReceiptModal({ order, settings, onClose }) {
     if (order.cashierName) text += `💼 Kasir    : ${order.cashierName}\n`;
     text += `-------------------------------------------\n\n`;
 
-    // Daftar Item Produk
     order.items.forEach(i => {
       text += `🛍️ *${i.name}*\n`;
       text += `    ${i.qty} x Rp ${Math.round(i.price).toLocaleString("id-ID")}  =  *Rp ${Math.round(i.price * i.qty).toLocaleString("id-ID")}*\n`;
@@ -111,7 +108,6 @@ function ReceiptModal({ order, settings, onClose }) {
     text += `Kembalian : Rp ${Math.round(order.change).toLocaleString("id-ID")}\n\n`;
     text += `🙏 _${settings.footerNote}_\n`;
 
-    // Buat URL wa.me dan buka tab baru
     const url = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(text)}`;
     window.open(url, "_blank");
   };
@@ -120,7 +116,6 @@ function ReceiptModal({ order, settings, onClose }) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
       <div style={{ background: "#fff", borderRadius: 16, padding: 28, width: 380, maxHeight: "95vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
         
-        {/* Tampilan Struk Fisik (untuk Print) */}
         <div ref={ref}>
           <div className="center" style={{ textAlign: "center", borderBottom: "2px dashed #e2e8f0", paddingBottom: 14, marginBottom: 14 }}>
             <div style={{ fontSize: 28 }}>🏪</div>
@@ -131,26 +126,41 @@ function ReceiptModal({ order, settings, onClose }) {
             <div style={{ fontSize: 11, color: "#a0aec0" }}>No: #{order.customId || String(order.id).slice(-6)}</div>
             {order.cashierName && <div style={{ fontSize: 11, color: "#718096" }}>Kasir: {order.cashierName}</div>}
           </div>
+          
           {order.items.map(i => (
-            <div key={i.id} className="row" style={{ display: "flex", justifySpaceBetween: "space-between", fontSize: 13, marginBottom: 5 }}>
+            <div key={i.id} className="row" style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 5, textAlign: "left" }}>
               <span>{i.icon} {i.name}<br /><span style={{ color: "#718096", fontSize: 11 }}>{i.qty} × Rp {Math.round(i.price).toLocaleString("id-ID")}</span></span>
               <span style={{ fontWeight: 600 }}>Rp {Math.round(i.price * i.qty).toLocaleString("id-ID")}</span>
             </div>
           ))}
+          
           <div className="dashed" style={{ borderTop: "1px dashed #e2e8f0", marginTop: 10, paddingTop: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#718096", marginBottom: 4 }}><span>Subtotal</span><span>Rp {Math.round(order.subtotal).toLocaleString("id-ID")}</span></div>
-            {order.discount > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#e53e3e", marginBottom: 4 }}><span>Diskon {order.discount}%</span><span>−Rp {Math.round(order.discAmt).toLocaleString("id-ID")}</span></div>}
-            {settings.taxRate > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#718096", marginBottom: 4 }}><span>Pajak {settings.taxRate}%</span><span>+Rp {Math.round(order.taxAmt || 0).toLocaleString("id-ID")}</span></div>}
-            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 16, color: "#1a365d", margin: "8px 0" }}><span>TOTAL</span><span>Rp {Math.round(order.total).toLocaleString("id-ID")}</span></div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#718096" }}><span>Bayar</span><span>Rp {Math.round(order.pay).toLocaleString("id-ID")}</span></div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#276749", fontWeight: 700 }}><span>Kembalian</span><span>Rp {Math.round(order.change).toLocaleString("id-ID")}</span></div>
+            <div className="row" style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#718096", marginBottom: 4 }}><span>Subtotal</span><span>Rp {Math.round(order.subtotal).toLocaleString("id-ID")}</span></div>
+            {order.discount > 0 && <div className="row" style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#e53e3e", marginBottom: 4 }}><span>Diskon {order.discount}%</span><span>−Rp {Math.round(order.discAmt).toLocaleString("id-ID")}</span></div>}
+            {settings.taxRate > 0 && <div className="row" style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#718096", marginBottom: 4 }}><span>Pajak {settings.taxRate}%</span><span>+Rp {Math.round(order.taxAmt || 0).toLocaleString("id-ID")}</span></div>}
+            <div className="row" style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 16, color: "#1a365d", margin: "8px 0" }}><span>TOTAL</span><span>Rp {Math.round(order.total).toLocaleString("id-ID")}</span></div>
+            <div className="row" style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#718096" }}><span>Bayar</span><span>Rp {Math.round(order.pay).toLocaleString("id-ID")}</span></div>
+            <div className="row" style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#276749", fontWeight: 700 }}><span>Kembalian</span><span>Rp {Math.round(order.change).toLocaleString("id-ID")}</span></div>
           </div>
+
+          <div className="center" style={{ textAlign: "center", margin: "10px 0" }}>
+            <div style={{ background: '#fff', padding: 10, display: 'inline-block', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', margin: '16px 0' }}>
+              <img 
+                src={settings.qrisUrl || "https://upload.wikimedia.org/wikipedia/commons/d/d0/QR_code_for_QR_pedia.png"} 
+                alt="QRIS E-Wallet" 
+                style={{ width: 150, height: 150, display: 'block', objectFit: 'contain' }} 
+              />
+            </div>
+            <p style={{ fontSize: 12, color: '#718096', margin: 0 }}>
+              Silakan lakukan pembayaran melalui QRIS / Barcode toko {settings.storeName}.
+            </p>
+          </div>
+
           <div style={{ textAlign: "center", marginTop: 12, fontSize: 12, color: "#a0aec0", borderTop: "2px dashed #e2e8f0", paddingTop: 12 }}>
             ⭐ {settings.footerNote} ⭐
           </div>
         </div>
 
-        {/* ── INPUT NOMOR WA PELANGGAN (TAMBAHAN BARU) ── */}
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: "2px solid #e2e8f0" }}>
           <label style={{ fontSize: 12, fontWeight: 600, color: "#4a5568", display: "block", marginBottom: 6 }}>No. WhatsApp Pelanggan:</label>
           <div style={{ display: "flex", gap: 6 }}>
@@ -170,7 +180,6 @@ function ReceiptModal({ order, settings, onClose }) {
           </div>
         </div>
 
-        {/* Tombol Kontrol Modal */}
         <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
           <button onClick={handlePrint} style={{ padding: "9px 18px", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 13, flex: 1, background: "#276749", color: "#fff" }}>🖨️ Cetak Fisik</button>
           <button onClick={onClose} style={{ padding: "9px 18px", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 13, flex: 1, background: "#e2e8f0", color: "#4a5568" }}>Tutup</button>
@@ -179,6 +188,7 @@ function ReceiptModal({ order, settings, onClose }) {
     </div>
   );
 }
+
 // ── LOGIN PAGE ───────────────────────────────────────────────────────────────
 function LoginPage({ onLogin }) {
   const [username, setUsername] = useState("");
@@ -248,7 +258,9 @@ export default function KasirApp() {
   const [newExpense, setNewExpense] = useState({ type: "pengeluaran", desc: "", amount: "", date: "" });
   const [editSettings, setEditSettings] = useState(() => load("kk_settings", INITIAL_SETTINGS));
   const [stockFilter, setStockFilter] = useState("semua");
+  
   const [reportRange, setReportRange] = useState({ from: "", to: "" });
+  const [historyRange, setHistoryRange] = useState({ from: "", to: "" });
 
   // Persist data
   useEffect(() => { save("kk_user", user); }, [user]);
@@ -363,11 +375,10 @@ export default function KasirApp() {
   const totalExpenses = expenses.filter(e => e.type === "pengeluaran").reduce((s, e) => s + e.amount, 0);
   const netProfit     = totalIncome - totalExpenses;
 
-  // ── LAPORAN EXCEL DENGAN FORMAT RUPIAH & DATA PENTING KEUANGAN UTAMA ──
+  // ── LAPORAN EXCEL ──
   const exportExcel = () => {
     const wb = XLSX.utils.book_new();
 
-    // 1. DATA PENTING KEUANGAN (Ringkasan Keuangan Utama)
     const summaryRows = [
       { "Kategori Keuangan": "Total Pendapatan Penjualan", "Nominal (Rupiah)": orders.reduce((s, o) => s + o.total, 0) },
       { "Kategori Keuangan": "Total Pendapatan Lain", "Nominal (Rupiah)": expenses.filter(e => e.type === "pendapatan").reduce((s, e) => s + e.amount, 0) },
@@ -377,7 +388,6 @@ export default function KasirApp() {
     ];
     const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
 
-    // 2. Data Transaksi
     const txRows = orders.map(o => ({
       "No. Struk": "#" + (o.customId || String(o.id).slice(-6)), 
       "Tanggal": o.date, 
@@ -390,7 +400,6 @@ export default function KasirApp() {
     }));
     const wsTx = XLSX.utils.json_to_sheet(txRows);
 
-    // 3. Data Keuangan (Detail Log Pengeluaran & Pendapatan Lain)
     const expRows = expenses.map(e => ({
       "Tanggal": e.date, 
       "Jenis Transaksi": e.type === "pengeluaran" ? "Pengeluaran" : "Pendapatan Lain",
@@ -399,7 +408,6 @@ export default function KasirApp() {
     }));
     const wsExp = XLSX.utils.json_to_sheet(expRows);
 
-    // 4. Data Stok Produk
     const stockRows = products.map(p => ({
       "Nama Produk": p.name, 
       "Kategori": p.category, 
@@ -410,33 +418,27 @@ export default function KasirApp() {
     }));
     const wsStock = XLSX.utils.json_to_sheet(stockRows);
 
-    // 🔥 LOGIK AUTO-FIT KOLOM & FORMAT CURRENCY RUPIAH AKURAT
     const formatAndAutoFit = (ws, rowsData, currencyColumns = []) => {
       if (!rowsData || rowsData.length === 0) return;
       
       const objectKeys = Object.keys(rowsData[0]);
-      
-      // 1. Terapkan Format Rupiah khusus untuk kolom finansial / angka nominal
       const range = XLSX.utils.decode_range(ws['!ref']);
-      for (let R = range.s.r + 1; R <= range.e.r; ++R) { // Memulai dari baris setelah Header
+      for (let R = range.s.r + 1; R <= range.e.r; ++R) {
         currencyColumns.forEach(colName => {
           const colIdx = objectKeys.indexOf(colName);
           if (colIdx !== -1) {
             const cellRef = XLSX.utils.encode_cell({ r: R, c: colIdx });
-            if (ws[cellRef] && ws[cellRef].t === 'n') { // Jika berupa data angka (number)
-              ws[cellRef].z = '"Rp" #,##0;[Red]("-Rp" #,##0);"-"'; // Format Rupiah Excel asli
+            if (ws[cellRef] && ws[cellRef].t === 'n') {
+              ws[cellRef].z = '"Rp" #,##0;[Red]("-Rp" #,##0);"-"';
             }
           }
         });
       }
 
-      // 2. Hitung Auto-Fit Lebar Kolom mengikuti isi teks terdalam
       const colsWidth = objectKeys.map(key => {
-        let maxLen = key.length; // panjang teks header awal
-        
+        let maxLen = key.length;
         rowsData.forEach(row => {
           let value = row[key] != null ? String(row[key]) : "";
-          // Jika kolom tersebut dikonversi ke format Rupiah, beri estimasi panjang tambahan karakter "Rp .000"
           if (currencyColumns.includes(key) && typeof row[key] === 'number') {
             value = "Rp " + Math.round(row[key]).toLocaleString("id-ID");
           }
@@ -444,26 +446,21 @@ export default function KasirApp() {
             maxLen = value.length;
           }
         });
-        
-        return { wch: maxLen + 4 }; // Tambah sedikit padding ruang aman
+        return { wch: maxLen + 4 };
       });
-      
       ws["!cols"] = colsWidth;
     };
 
-    // Eksekusi pemformatan otomatis pada masing-masing sheet
     formatAndAutoFit(wsSummary, summaryRows, ["Nominal (Rupiah)"]);
     formatAndAutoFit(wsTx, txRows, ["Subtotal", "Diskon", "Pajak", "Total Akhir"]);
     formatAndAutoFit(wsExp, expRows, ["Nominal"]);
     formatAndAutoFit(wsStock, stockRows, ["Harga Satuan"]);
 
-    // Masukkan lembar sheet teratur ke dalam workbook (Ringkasan Keuangan ditaruh paling depan)
     XLSX.utils.book_append_sheet(wb, wsSummary, "Ringkasan Keuangan");
     XLSX.utils.book_append_sheet(wb, wsTx, "Daftar Transaksi");
     XLSX.utils.book_append_sheet(wb, wsExp, "Log Keuangan");
     XLSX.utils.book_append_sheet(wb, wsStock, "Stok Barang");
 
-    // Unduh File
     XLSX.writeFile(wb, `Laporan_KasirKu_Rapi_${new Date().toLocaleDateString("id-ID").replace(/\//g,"-")}.xlsx`);
     showToast("Laporan Excel format Rupiah siap diunduh! 📊");
   };
@@ -525,6 +522,16 @@ export default function KasirApp() {
   };
 
   const lowStockProducts = products.filter(p => (p.stock || 0) <= (p.minStock || 0));
+
+  const getFilteredOrders = () => {
+    return orders.filter(o => {
+      if (!historyRange.from && !historyRange.to) return true;
+      const d = new Date(o.id);
+      const from = historyRange.from ? new Date(historyRange.from + "T00:00:00") : null;
+      const to   = historyRange.to   ? new Date(historyRange.to + "T23:59:59") : null;
+      return (!from || d >= from) && (!to || d <= to);
+    });
+  };
 
   return (
     <div style={{ fontFamily: "'Segoe UI', sans-serif", background: "#f0f4f8", minHeight: "100vh", color: "#1a202c" }}>
@@ -594,7 +601,6 @@ export default function KasirApp() {
             </div>
           </div>
 
-          {/* Keranjang */}
           <div style={{ background: "#fff", borderLeft: "1.5px solid #e2e8f0", display: "flex", flexDirection: "column", height: "calc(100vh - 62px)" }}>
             <div style={{ padding: "14px 16px", borderBottom: "1px solid #e2e8f0", fontWeight: 700, fontSize: 15, color: "#1a365d" }}>
               🛒 Keranjang {cart.length > 0 && <span style={{ background: "#2b6cb0", color: "#fff", borderRadius: 20, padding: "1px 8px", fontSize: 12, marginLeft: 6 }}>{cart.reduce((s,i)=>s+i.qty,0)}</span>}
@@ -815,20 +821,46 @@ export default function KasirApp() {
       {/* TAB: RIWAYAT */}
       {tab === "riwayat" && (
         <div style={{ maxWidth: 860, margin: "0 auto", padding: 24 }}>
+          <div style={{ background: "#fff", borderRadius: 14, padding: 18, marginBottom: 20, border: "1px solid #e2e8f0" }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: "#1a365d", marginBottom: 12 }}>🔍 Filter Tanggal Transaksi</div>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <div>
+                <label style={{ fontSize: 12, color: "#718096", display: "block", marginBottom: 4 }}>Dari Tanggal</label>
+                <input type="date" value={historyRange.from} onChange={e => setHistoryRange(p => ({ ...p, from: e.target.value }))} style={{ ...S.inp, width: 160 }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: "#718096", display: "block", marginBottom: 4 }}>Sampai Tanggal</label>
+                <input type="date" value={historyRange.to} onChange={e => setHistoryRange(p => ({ ...p, to: e.target.value }))} style={{ ...S.inp, width: 160 }} />
+              </div>
+              {(historyRange.from || historyRange.to) && (
+                <button 
+                  onClick={() => setHistoryRange({ from: "", to: "" })} 
+                  style={{ ...S.smBtn, background: "#fff5f5", color: "#e53e3e", alignSelf: "flex-end", height: 38 }}
+                >
+                  🔄 Reset Filter
+                </button>
+              )}
+            </div>
+          </div>
+
           {canAdmin && (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 20 }}>
               {[
-                ["💰 Total Pendapatan", fmt(orders.reduce((s,o)=>s+o.total,0)), "#c6f6d5", "#276749"],
-                ["📋 Total Transaksi", orders.length, "#bee3f8", "#2b6cb0"],
-                ["🧾 Rata-rata", orders.length ? fmt(orders.reduce((s,o)=>s+o.total,0)/orders.length) : "Rp 0", "#fefcbf", "#975a16"],
+                ["💰 Total Pendapatan", fmt(getFilteredOrders().reduce((s,o)=>s+o.total,0)), "#c6f6d5", "#276749"],
+                ["📋 Total Transaksi", getFilteredOrders().length, "#bee3f8", "#2b6cb0"],
+                ["🧾 Rata-rata", getFilteredOrders().length ? fmt(getFilteredOrders().reduce((s,o)=>s+o.total,0)/getFilteredOrders().length) : "Rp 0", "#fefcbf", "#975a16"],
               ].map(([label, val, bg, color]) => (
                 <div key={label} style={{ background: bg, borderRadius: 12, padding: "16px 18px" }}><div style={{ fontSize: 12, color, marginBottom: 4 }}>{label}</div><div style={{ fontWeight: 700, fontSize: 22, color }}>{val}</div></div>
               ))}
             </div>
           )}
-          {orders.length === 0 ? (
-            <div style={{ textAlign: "center", padding: 60, color: "#a0aec0", background: "#fff", borderRadius: 14 }}><div style={{ fontSize: 48 }}>📋</div><div>Belum ada transaksi</div></div>
-          ) : orders.map(o => (
+
+          {getFilteredOrders().length === 0 ? (
+            <div style={{ textAlign: "center", padding: 60, color: "#a0aec0", background: "#fff", borderRadius: 14 }}>
+              <div style={{ fontSize: 48 }}>📋</div>
+              <div>Belum ada transaksi pada periode ini</div>
+            </div>
+          ) : getFilteredOrders().map(o => (
             <div key={o.id} style={{ background: "#fff", borderRadius: 12, padding: "14px 18px", marginBottom: 10, border: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 14, color: "#1a365d" }}>#{o.customId || String(o.id).slice(-6)}</div>
@@ -895,11 +927,36 @@ export default function KasirApp() {
 
       {/* TAB: SETTING */}
       {tab === "setting" && canAdmin && (
-        <div style={{ maxWidth: 620, margin: "0 auto", padding: 24 }}>
+        <div style={{ maxWidth: 620, margin: "0 auto", padding: 24, display: "flex", flexDirection: "column", gap: 20 }}>
+          
+          {/* BLOK PENGATURAN BARU DARI USER */}
+          <div style={{ background: '#fff', borderRadius: 12, padding: 16, boxShadow: '0 4px 6px rgba(0,0,0,0.05)', border: "1px solid #e2e8f0" }}>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: 14, fontWeight: 'bold', color: "#1a365d" }}>⚙️ Pengaturan Aplikasi</h3>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, fontWeight: '600', display: 'block', marginBottom: 4 }}>Nama Aplikasi / Toko:</label>
+              <input type="text" style={S.inp} value={editSettings.storeName} onChange={(e) => setEditSettings({ ...editSettings, storeName: e.target.value })} />
+            </div>
+            
+            {/* Kolom Baru Untuk Mengubah QRIS E-Wallet Anda */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, fontWeight: '600', display: 'block', marginBottom: 4 }}>Link / URL Gambar QRIS E-Wallet:</label>
+              <input 
+                type="text" 
+                style={S.inp} 
+                placeholder="Tempel link gambar QRIS DANA/OVO Anda di sini..." 
+                value={editSettings.qrisUrl || ''} 
+                onChange={(e) => setEditSettings({ ...editSettings, qrisUrl: e.target.value })} 
+              />
+              <p style={{ fontSize: 11, color: '#718096', marginTop: 4, margin: 0 }}>
+                *Tips: Upload foto QRIS Anda ke situs seperti postimages.org, lalu salin "Direct Link"-nya ke sini.
+              </p>
+            </div>
+          </div>
+
+          {/* DETAIL DETAIL PENGATURAN TOKO LAINNYA */}
           <div style={{ background: "#fff", borderRadius: 14, padding: 24, border: "1px solid #e2e8f0" }}>
-            <div style={{ fontWeight: 700, fontSize: 16, color: "#1a365d", marginBottom: 20 }}>⚙️ Pengaturan Toko</div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: "#1a365d", marginBottom: 16 }}>📋 Informasi Tambahan Toko</div>
             {[
-              ["storeName",    "Nama Toko",               "text",   "KasirKu"],
               ["storeAddress", "Alamat Toko",              "text",   "Jl. Contoh No. 1"],
               ["storePhone",   "No. Telepon",              "text",   "08123456789"],
               ["taxRate",      "Pajak (%)",                "number", "0"],
@@ -925,16 +982,6 @@ export default function KasirApp() {
               >
                 🗑️ Reset Semua Data
               </button>
-            </div>
-            <div style={{ marginTop: 24, padding: "14px 16px", background: "#f7fafc", borderRadius: 10, border: "1px solid #e2e8f0" }}>
-              <div style={{ fontWeight: 700, fontSize: 14, color: "#1a365d", marginBottom: 8 }}>👥 Daftar Pengguna</div>
-              {USERS.map(u => (
-                <div key={u.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #e2e8f0", fontSize: 13 }}>
-                  <span>{u.role === "admin" ? "👑" : "💼"} <strong>{u.name}</strong> ({u.username})</span>
-                  <span style={{ color: "#718096" }}>{u.role}</span>
-                </div>
-              ))}
-              <div style={{ fontSize: 11, color: "#a0aec0", marginTop: 8 }}>* Manajemen pengguna lanjutan tersedia di versi premium.</div>
             </div>
           </div>
         </div>
