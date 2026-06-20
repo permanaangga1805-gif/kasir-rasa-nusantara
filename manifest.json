@@ -1,6 +1,6 @@
 {
-  "name": "Rasa Nusantara - Aplikasi Kasir",
-  "short_name": "KasirKu",
+  "name": "My Cashier - Aplikasi Kasir Digital",
+  "short_name": "My-Cashier",
   "description": "Aplikasi kasir offline untuk Rasa nusantara.co",
   "start_url": "./",
   "scope": "./",

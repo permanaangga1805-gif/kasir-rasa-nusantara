@@ -8,7 +8,7 @@
 // - Saat offline: langsung disajikan dari cache (termasuk file JS/CSS/gambar
 //   hasil build, yang nama filenya otomatis berbeda-beda tiap kali di-build).
 
-const CACHE_NAME = "kasirku-cache-v3"; // naikkan angka versi ini tiap kali ingin memaksa pengguna ambil ulang cache baru
+const CACHE_NAME = "kasirku-cache-v4"; // naikkan angka versi ini tiap kali ingin memaksa pengguna ambil ulang cache baru
 const APP_SHELL = ["./", "./index.html", "./manifest.json"];
 
 self.addEventListener("install", (event) => {
