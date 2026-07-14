@@ -469,6 +469,18 @@ export default function KasirApp() {
   const [showScanner, setShowScanner] = useState(null); // null | "produk" | "kasir"
   const [showQris, setShowQris] = useState(false);
   const [nextOrderNumber, setNextOrderNumber] = useState(() => load("kk_order_counter", 1));
+  // Tambahkan di dalam fungsi KasirApp()
+const [currentTime, setCurrentTime] = useState(new Date());
+
+useEffect(() => {
+  const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+  return () => clearInterval(timer);
+}, []);
+
+// Untuk menampilkannya di Header (di samping nama user):
+<div style={{ fontSize: 12, opacity: 0.9 }}>
+  {currentTime.toLocaleTimeString("id-ID")}
+</div>
 
   useEffect(() => {
   supabase.from('outlets').select('*').then(({ data, error }) => {
@@ -577,28 +589,45 @@ export default function KasirApp() {
     showToast("Pembayaran QRIS berhasil! 🎉");
   };
 
+  // Tambahkan state jam
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Update jam setiap detik
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
   const handleAbsensi = async () => {
-  const now = new Date();
-  const jamMasuk = 8; // Jam 8 pagi
-  const isLate = now.getHours() >= jamMasuk;
+    // 1. Mengambil waktu server Supabase yang akurat (agar tidak bisa dicurangi)
+    const { data: timeData, error: timeError } = await supabase
+      .from('attendance')
+      .select('now()')
+      .single();
 
-  const attendanceData = {
-    user_id: user.id,
-    outlet_id: user.outlet_id,
-    check_in_time: now.toISOString(),
-    is_late: isLate,
-    status_label: isLate ? "TELAT" : "TEPAT WAKTU"
+    if (timeError) return showToast("Gagal mengambil waktu server", "error");
+
+    const now = new Date(timeData.now);
+    const jamMasuk = 8; // Batas jam 08:00
+    const isLate = now.getHours() >= jamMasuk;
+
+    const attendanceData = {
+      user_id: user.id,
+      outlet_id: user.outlet_id,
+      check_in_time: now.toISOString(),
+      is_late: isLate,
+      status_label: isLate ? "TELAT" : "TEPAT WAKTU"
+    };
+
+    // 2. Insert ke database
+    const { data, error } = await supabase.from('attendance').insert([attendanceData]);
+
+    if (error) {
+      showToast("Gagal absensi: " + error.message, "error");
+    } else {
+      setAttendanceStatus(attendanceData);
+      showToast(`Berhasil Absensi! Status: ${attendanceData.status_label}`);
+    }
   };
-
-  const { data, error } = await supabase.from('attendance').insert([attendanceData]);
-
-  if (error) {
-    alert("Gagal absensi: " + error.message);
-  } else {
-    setAttendanceStatus(attendanceData);
-    alert("Berhasil Absensi!");
-  }
-};
 
   // ── HASIL SCAN BARCODE ──
   // mode "produk": isi/cari form produk (hanya dipanggil dari tab Produk, khusus admin)
