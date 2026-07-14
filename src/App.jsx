@@ -628,6 +628,37 @@ useEffect(() => {
       showToast(`Berhasil Absensi! Status: ${attendanceData.status_label}`);
     }
   };
+    const handleAbsenPulang = async () => {
+    // 1. Ambil waktu server
+    const { data: timeData } = await supabase.from('attendance').select('now()').single();
+    const now = new Date(timeData.now);
+
+    // 2. Cari data absensi masuk hari ini milik user tersebut
+    const today = now.toISOString().split('T')[0];
+    const { data: existingAttendance } = await supabase
+      .from('attendance')
+      .select('id')
+      .eq('user_id', user.id)
+      .gte('check_in_time', `${today}T00:00:00`)
+      .is('check_out_time', null) // Pastikan belum pernah absen pulang
+      .single();
+
+    if (!existingAttendance) {
+      return showToast("Anda belum absen masuk hari ini!", "error");
+    }
+
+    // 3. Update data absensi dengan waktu pulang
+    const { error } = await supabase
+      .from('attendance')
+      .update({ check_out_time: now.toISOString() })
+      .eq('id', existingAttendance.id);
+
+    if (error) {
+      showToast("Gagal absen pulang: " + error.message, "error");
+    } else {
+      showToast("Berhasil Absen Pulang! Sampai jumpa besok 👋");
+    }
+  };
 
   // ── HASIL SCAN BARCODE ──
   // mode "produk": isi/cari form produk (hanya dipanggil dari tab Produk, khusus admin)
@@ -851,6 +882,24 @@ useEffect(() => {
   <button onClick={() => { setUser(null); setCart([]); }} style={{ background: "rgba(255,255,255,0.15)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>Keluar</button>
 </div>
         
+// ... bagian di dalam Header
+<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+  
+  {/* ── TOMBOL ABSENSI ── */}
+  <div style={{ display: "flex", gap: "10px", marginRight: "10px" }}>
+    <button onClick={handleAbsensi} style={{ ...S.smBtn, background: "#48bb78", color: "#fff" }}>✅ Masuk</button>
+    <button onClick={handleAbsenPulang} style={{ ...S.smBtn, background: "#e53e3e", color: "#fff" }}>🚪 Pulang</button>
+  </div>
+
+  {/* Info User */}
+  <div style={{ textAlign: "right" }}>
+    <div style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</div>
+    <div style={{ fontSize: 11, opacity: 0.7 }}>{user.role === "admin" ? "👑 Admin" : "💼 Kasir"}</div>
+  </div>
+  
+  {/* Tombol Keluar */}
+  <button onClick={() => { setUser(null); setCart([]); }} style={{ background: "rgba(255,255,255,0.15)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>Keluar</button>
+</div>
       </div>
 
       {/* ── TAB: KASIR ── */}
