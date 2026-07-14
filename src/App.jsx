@@ -470,7 +470,7 @@ export default function KasirApp() {
   const [showQris, setShowQris] = useState(false);
   const [nextOrderNumber, setNextOrderNumber] = useState(() => load("kk_order_counter", 1));
   // Tambahkan di dalam fungsi KasirApp()
-
+const [currentTime, setCurrentTime] = useState(new Date());
 
 useEffect(() => {
   const timer = setInterval(() => setCurrentTime(new Date()), 1000);
