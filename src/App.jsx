@@ -446,6 +446,7 @@ function QrisModal({ settings, total, onConfirm, onClose }) {
 // ── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function KasirApp() {
   const [user, setUser]             = useState(() => load("kk_user", null));
+  const [attendanceStatus, setAttendanceStatus] = useState(null);
   const [products, setProducts]     = useState(() => load("kk_products", INITIAL_PRODUCTS));
   const [orders, setOrders]         = useState(() => load("kk_orders", []));
   const [expenses, setExpenses]     = useState(() => load("kk_expenses", []));
@@ -575,6 +576,29 @@ export default function KasirApp() {
     setCart([]); setPayAmount(""); setDiscount(0);
     showToast("Pembayaran QRIS berhasil! 🎉");
   };
+
+  const handleAbsensi = async () => {
+  const now = new Date();
+  const jamMasuk = 8; // Jam 8 pagi
+  const isLate = now.getHours() >= jamMasuk;
+
+  const attendanceData = {
+    user_id: user.id,
+    outlet_id: user.outlet_id,
+    check_in_time: now.toISOString(),
+    is_late: isLate,
+    status_label: isLate ? "TELAT" : "TEPAT WAKTU"
+  };
+
+  const { data, error } = await supabase.from('attendance').insert([attendanceData]);
+
+  if (error) {
+    alert("Gagal absensi: " + error.message);
+  } else {
+    setAttendanceStatus(attendanceData);
+    alert("Berhasil Absensi!");
+  }
+};
 
   // ── HASIL SCAN BARCODE ──
   // mode "produk": isi/cari form produk (hanya dipanggil dari tab Produk, khusus admin)
@@ -775,12 +799,29 @@ export default function KasirApp() {
           ))}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</div>
-            <div style={{ fontSize: 11, opacity: 0.7 }}>{user.role === "admin" ? "👑 Admin" : "💼 Kasir"}</div>
-          </div>
-          <button onClick={() => { setUser(null); setCart([]); }} style={{ background: "rgba(255,255,255,0.15)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>Keluar</button>
-        </div>
+  <button 
+    onClick={handleAbsensi}
+    style={{ 
+      padding: "5px 10px", 
+      fontSize: "12px", 
+      background: attendanceStatus ? "#e2e8f0" : "#48bb78", 
+      color: attendanceStatus ? "#4a5568" : "#fff",
+      border: "none", 
+      borderRadius: "4px",
+      cursor: attendanceStatus ? "default" : "pointer"
+    }}
+    disabled={!!attendanceStatus}
+  >
+    {attendanceStatus ? "Sudah Absen" : "Absen Masuk"}
+  </button>
+
+  <div style={{ textAlign: "right" }}>
+    <div style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</div>
+    <div style={{ fontSize: 11, opacity: 0.7 }}>{user.role === "admin" ? "👑 Admin" : "💼 Kasir"}</div>
+  </div>
+  <button onClick={() => { setUser(null); setCart([]); }} style={{ background: "rgba(255,255,255,0.15)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>Keluar</button>
+</div>
+        
       </div>
 
       {/* ── TAB: KASIR ── */}
