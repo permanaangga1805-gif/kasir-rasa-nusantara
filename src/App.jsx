@@ -6,7 +6,6 @@ import { supabase } from './supabaseClient'
 const fmt = (n) => "Rp " + Math.round(n).toLocaleString("id-ID");
 const now = () => new Date().toLocaleString("id-ID");
 
-// Bunyi "beep" saat scan berhasil (pakai Web Audio API, tanpa file audio eksternal)
 function playBeep() {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -26,7 +25,6 @@ function playBeep() {
   } catch {}
 }
 
-// Lebar kolom Excel otomatis mengikuti panjang teks terpanjang di tiap kolom (header & isi)
 function autoFitColumns(rows, moneyCols = []) {
   if (!rows || rows.length === 0) return [];
   const keys = Object.keys(rows[0]);
@@ -35,14 +33,13 @@ function autoFitColumns(rows, moneyCols = []) {
     rows.forEach(row => {
       const val = row[k];
       let len = val === null || val === undefined ? 0 : String(val).length;
-      if (moneyCols.includes(idx) && typeof val === "number") len += 6; // ruang ekstra utk "Rp" & pemisah ribuan
+      if (moneyCols.includes(idx) && typeof val === "number") len += 6;
       if (len > maxLen) maxLen = len;
     });
     return { wch: Math.min(Math.max(maxLen + 2, 10), 45) };
   });
 }
 
-// Format angka nominal jadi "Rp" dengan pemisah ribuan rapi (mis. Rp1.500.000), minus berwarna merah
 const RP_FORMAT = '"Rp"#,##0;[Red]-"Rp"#,##0';
 function applyRupiahFormat(ws, colLetters, firstDataRow, lastDataRow) {
   colLetters.forEach(col => {
@@ -53,8 +50,6 @@ function applyRupiahFormat(ws, colLetters, firstDataRow, lastDataRow) {
   });
 }
 
-// Format nomor transaksi 5 digit berurutan (00001, 00002, dst). Untuk transaksi lama yang
-// belum punya nomor urut (orderNumber), tampilkan fallback dari id lama agar data lama tetap terbaca.
 const orderNo = (o) => (o && o.orderNumber) ? String(o.orderNumber).padStart(5, "0") : String(o.id).slice(-6);
 
 const USERS = [
@@ -111,15 +106,14 @@ function LoginPage({ onLogin }) {
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
-    if (!email || !password) { 
-      setErr("Email dan password wajib diisi!"); 
-      return; 
+    if (!email || !password) {
+      setErr("Email dan password wajib diisi!");
+      return;
     }
     setErr("");
     setLoading(true);
 
     try {
-      // 1. Verifikasi Email & Password ke cloud Supabase
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password: password,
@@ -129,7 +123,6 @@ function LoginPage({ onLogin }) {
         throw new Error("Email atau password salah!");
       }
 
-      // 2. Ambil data profil (nama, role, outlet) dari tabel profiles
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -140,12 +133,10 @@ function LoginPage({ onLogin }) {
         throw new Error("Data profil pengguna tidak ditemukan di tabel profiles!");
       }
 
-      // 3. Masukkan data user dari cloud ke dalam sistem kasir
       onLogin({
         id: authData.user.id,
         email: authData.user.email,
         name: profile.full_name || email.split('@')[0],
-        // Sesuaikan nama role dari database ke format aplikasi Anda
         role: profile.role === 'super_admin' ? 'admin' : profile.role,
         outlet_id: profile.outlet_id
       });
@@ -166,46 +157,46 @@ function LoginPage({ onLogin }) {
           <div style={{ fontWeight: 800, fontSize: 26, color: "#1a365d" }}>My Cashier</div>
           <div style={{ color: "#718096", fontSize: 13 }}>Terhubung ke Cloud Database</div>
         </div>
-        
+
         {err && <div style={{ background: "#fff5f5", color: "#c53030", padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 16, border: "1px solid #fed7d7" }}>❌ {err}</div>}
-        
+
         <div style={{ marginBottom: 14 }}>
           <label style={{ fontSize: 13, fontWeight: 600, color: "#4a5568", display: "block", marginBottom: 6 }}>Email</label>
-          <input 
+          <input
             type="email"
-            value={email} 
-            onChange={e => setEmail(e.target.value)} 
+            value={email}
+            onChange={e => setEmail(e.target.value)}
             placeholder="admin@rasanusantara.co"
-            style={S.inp} 
-            onKeyDown={e => e.key === "Enter" && !loading && handleLogin()} 
+            style={S.inp}
+            onKeyDown={e => e.key === "Enter" && !loading && handleLogin()}
             disabled={loading}
           />
         </div>
-        
+
         <div style={{ marginBottom: 20 }}>
           <label style={{ fontSize: 13, fontWeight: 600, color: "#4a5568", display: "block", marginBottom: 6 }}>Password</label>
           <div style={{ position: "relative" }}>
-            <input 
-              type={showPw ? "text" : "password"} 
-              value={password} 
+            <input
+              type={showPw ? "text" : "password"}
+              value={password}
               onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••" 
-              style={{ ...S.inp, paddingRight: 40 }} 
+              placeholder="••••••••"
+              style={{ ...S.inp, paddingRight: 40 }}
               onKeyDown={e => e.key === "Enter" && !loading && handleLogin()}
               disabled={loading}
             />
             <button type="button" onClick={() => setShowPw(v => !v)} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 16 }}>{showPw ? "🙈" : "👁️"}</button>
           </div>
         </div>
-        
-        <button 
-          onClick={handleLogin} 
+
+        <button
+          onClick={handleLogin}
           disabled={loading}
           style={{ ...S.btn, width: "100%", background: loading ? "#a0aec0" : "#2b6cb0", color: "#fff", fontSize: 15, padding: 13, cursor: loading ? "not-allowed" : "pointer" }}
         >
           {loading ? "⏳ Memeriksa ke Cloud..." : "Masuk →"}
         </button>
-        
+
         <div style={{ marginTop: 20, padding: "12px 14px", background: "#ebf8ff", borderRadius: 10, fontSize: 12, color: "#2c5282", textAlign: "center" }}>
           <div>🔒 Login diamankan oleh Supabase Auth</div>
           <div style={{ fontSize: 11, marginTop: 4, opacity: 0.8 }}>Gunakan Email & Password yang terdaftar di cloud</div>
@@ -214,6 +205,7 @@ function LoginPage({ onLogin }) {
     </div>
   );
 }
+
 // ── RECEIPT MODAL ────────────────────────────────────────────────────────────
 function ReceiptModal({ order, settings, onClose }) {
   const ref = useRef();
@@ -274,11 +266,9 @@ function ReceiptModal({ order, settings, onClose }) {
   );
 }
 
-// ── SCANNER MODAL (Kamera HP & Scanner Eksternal) ────────────────────────────
-// mode: "produk" -> dipakai admin untuk input/cari barang via barcode (auto-close setelah 1 scan)
-// mode: "kasir"  -> dipakai kasir/admin untuk menambah produk ke keranjang (tetap terbuka utk scan berulang)
+// ── SCANNER MODAL ─────────────────────────────────────────────────────────────
 function ScannerModal({ mode, onResult, onClose }) {
-  const [scanMode, setScanMode] = useState("camera"); // "camera" | "external"
+  const [scanMode, setScanMode] = useState("camera");
   const [manualCode, setManualCode] = useState("");
   const [cameraError, setCameraError] = useState("");
   const [lastScanned, setLastScanned] = useState("");
@@ -321,7 +311,7 @@ function ScannerModal({ mode, onResult, onClose }) {
               const codes = await detector.detect(videoRef.current);
               if (codes && codes.length > 0) {
                 handleDetected(codes[0].rawValue);
-                if (mode === "produk") return; // auto-stop loop, modal akan ditutup oleh parent
+                if (mode === "produk") return;
               }
             } catch {}
             rafRef.current = requestAnimationFrame(loop);
@@ -465,23 +455,16 @@ export default function KasirApp() {
   const [editSettings, setEditSettings] = useState(settings);
   const [stockFilter, setStockFilter] = useState("semua");
   const [reportRange, setReportRange] = useState({ from: "", to: "" });
-  const [showAllReceipt, setShowAllReceipt] = useState(false);
-  const [showScanner, setShowScanner] = useState(null); // null | "produk" | "kasir"
+  const [showScanner, setShowScanner] = useState(null);
   const [showQris, setShowQris] = useState(false);
   const [nextOrderNumber, setNextOrderNumber] = useState(() => load("kk_order_counter", 1));
   const [currentTime, setCurrentTime] = useState(new Date());
 
-useEffect(() => {
-  const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-  return () => clearInterval(timer);
-}, []);
-
-
+  // Jam real-time di header (satu-satunya interval, tidak dobel)
   useEffect(() => {
-  supabase.from('outlets').select('*').then(({ data, error }) => {
-    console.log('TEST KONEKSI SUPABASE:', data, error)
-  })
-}, [])
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // persist
   useEffect(() => { save("kk_user", user); }, [user]);
@@ -551,7 +534,6 @@ useEffect(() => {
     };
     setOrders(prev => [order, ...prev]);
     setNextOrderNumber(n => n + 1);
-    // kurangi stok
     setProducts(prev => prev.map(p => {
       const cartItem = cart.find(i => i.id === p.id);
       if (!cartItem) return p;
@@ -562,7 +544,6 @@ useEffect(() => {
     showToast("Pembayaran berhasil! 🎉");
   };
 
-  // ── PEMBAYARAN QRIS ──
   const handlePayQris = () => {
     if (cart.length === 0) return showToast("Keranjang kosong!", "error");
     if (!settings.qrImage) return showToast("QR pembayaran belum diatur di menu Setting!", "error");
@@ -572,7 +553,6 @@ useEffect(() => {
     };
     setOrders(prev => [order, ...prev]);
     setNextOrderNumber(n => n + 1);
-    // kurangi stok
     setProducts(prev => prev.map(p => {
       const cartItem = cart.find(i => i.id === p.id);
       if (!cartItem) return p;
@@ -584,37 +564,21 @@ useEffect(() => {
     showToast("Pembayaran QRIS berhasil! 🎉");
   };
 
-  // Tambahkan state jam
-  
-
-  // Update jam setiap detik
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  // ── ABSENSI (pakai jam client, sederhana & stabil) ──
   const handleAbsensi = async () => {
-    // 1. Mengambil waktu server Supabase yang akurat (agar tidak bisa dicurangi)
-    const { data: timeData, error: timeError } = await supabase
-      .from('attendance')
-      .select('now()')
-      .single();
-
-    if (timeError) return showToast("Gagal mengambil waktu server", "error");
-
-    const now = new Date(timeData.now);
+    const nowTime = new Date();
     const jamMasuk = 8; // Batas jam 08:00
-    const isLate = now.getHours() >= jamMasuk;
+    const isLate = nowTime.getHours() >= jamMasuk;
 
     const attendanceData = {
       user_id: user.id,
       outlet_id: user.outlet_id,
-      check_in_time: now.toISOString(),
+      check_in_time: nowTime.toISOString(),
       is_late: isLate,
       status_label: isLate ? "TELAT" : "TEPAT WAKTU"
     };
 
-    // 2. Insert ke database
-    const { data, error } = await supabase.from('attendance').insert([attendanceData]);
+    const { error } = await supabase.from('attendance').insert([attendanceData]);
 
     if (error) {
       showToast("Gagal absensi: " + error.message, "error");
@@ -623,29 +587,26 @@ useEffect(() => {
       showToast(`Berhasil Absensi! Status: ${attendanceData.status_label}`);
     }
   };
-    const handleAbsenPulang = async () => {
-    // 1. Ambil waktu server
-    const { data: timeData } = await supabase.from('attendance').select('now()').single();
-    const now = new Date(timeData.now);
 
-    // 2. Cari data absensi masuk hari ini milik user tersebut
-    const today = now.toISOString().split('T')[0];
+  const handleAbsenPulang = async () => {
+    const nowTime = new Date();
+    const today = nowTime.toISOString().split('T')[0];
+
     const { data: existingAttendance } = await supabase
       .from('attendance')
       .select('id')
       .eq('user_id', user.id)
       .gte('check_in_time', `${today}T00:00:00`)
-      .is('check_out_time', null) // Pastikan belum pernah absen pulang
+      .is('check_out_time', null)
       .single();
 
     if (!existingAttendance) {
       return showToast("Anda belum absen masuk hari ini!", "error");
     }
 
-    // 3. Update data absensi dengan waktu pulang
     const { error } = await supabase
       .from('attendance')
-      .update({ check_out_time: now.toISOString() })
+      .update({ check_out_time: nowTime.toISOString() })
       .eq('id', existingAttendance.id);
 
     if (error) {
@@ -656,8 +617,6 @@ useEffect(() => {
   };
 
   // ── HASIL SCAN BARCODE ──
-  // mode "produk": isi/cari form produk (hanya dipanggil dari tab Produk, khusus admin)
-  // mode "kasir" : cari produk lalu langsung masukkan ke keranjang
   const handleScanResult = (code) => {
     if (showScanner === "produk") {
       const existing = products.find(p => p.barcode && p.barcode === code);
@@ -715,7 +674,6 @@ useEffect(() => {
   const exportExcel = () => {
     const wb = XLSX.utils.book_new();
 
-    // Sheet 1: Transaksi
     const txRows = orders.map(o => ({
       "No. Struk": "#" + orderNo(o), "Tanggal": o.date, "Kasir": o.cashierName || "-",
       "Item": o.items.map(i => `${i.name}(${i.qty})`).join(", "),
@@ -723,32 +681,29 @@ useEffect(() => {
       "Bayar": o.pay, "Kembalian": o.change,
     }));
     const wsTransaksi = XLSX.utils.json_to_sheet(txRows);
-    wsTransaksi["!cols"] = autoFitColumns(txRows, [4, 5, 6, 7, 8, 9]); // Subtotal, Diskon, Pajak, Total, Bayar, Kembalian
+    wsTransaksi["!cols"] = autoFitColumns(txRows, [4, 5, 6, 7, 8, 9]);
     applyRupiahFormat(wsTransaksi, ["E", "F", "G", "H", "I", "J"], 2, txRows.length + 1);
     XLSX.utils.book_append_sheet(wb, wsTransaksi, "Transaksi");
 
-    // Sheet 2: Keuangan
     const expRows = expenses.map(e => ({
       "Tanggal": e.date, "Jenis": e.type === "pengeluaran" ? "Pengeluaran" : "Pendapatan Lain",
       "Deskripsi": e.desc, "Jumlah": e.type === "pengeluaran" ? -e.amount : e.amount,
     }));
     const wsKeuangan = XLSX.utils.json_to_sheet(expRows);
-    wsKeuangan["!cols"] = autoFitColumns(expRows, [3]); // Jumlah
+    wsKeuangan["!cols"] = autoFitColumns(expRows, [3]);
     applyRupiahFormat(wsKeuangan, ["D"], 2, expRows.length + 1);
     XLSX.utils.book_append_sheet(wb, wsKeuangan, "Keuangan");
 
-    // Sheet 3: Stok
     const stockRows = products.map(p => ({
       "Produk": p.name, "Kategori": p.category, "Harga": p.price,
       "Stok": p.stock || 0, "Min. Stok": p.minStock || 0,
       "Status": (p.stock || 0) <= (p.minStock || 0) ? "⚠️ Menipis" : "✅ Aman",
     }));
     const wsStok = XLSX.utils.json_to_sheet(stockRows);
-    wsStok["!cols"] = autoFitColumns(stockRows, [2]); // Harga
+    wsStok["!cols"] = autoFitColumns(stockRows, [2]);
     applyRupiahFormat(wsStok, ["C"], 2, stockRows.length + 1);
     XLSX.utils.book_append_sheet(wb, wsStok, "Stok");
 
-    // Sheet 4: Ringkasan
     const summary = [
       { "Keterangan": "Total Pendapatan Penjualan", "Jumlah": orders.reduce((s,o)=>s+o.total,0) },
       { "Keterangan": "Total Pendapatan Lain", "Jumlah": expenses.filter(e=>e.type==="pendapatan").reduce((s,e)=>s+e.amount,0) },
@@ -758,7 +713,6 @@ useEffect(() => {
     ];
     const wsRingkasan = XLSX.utils.json_to_sheet(summary);
     wsRingkasan["!cols"] = autoFitColumns(summary, [1]);
-    // Kolom Jumlah diformat Rp, KECUALI baris terakhir (Total Transaksi) karena isinya jumlah transaksi, bukan nominal uang
     applyRupiahFormat(wsRingkasan, ["B"], 2, summary.length);
     XLSX.utils.book_append_sheet(wb, wsRingkasan, "Ringkasan");
 
@@ -827,7 +781,6 @@ useEffect(() => {
 
   return (
     <div style={{ fontFamily: "'Segoe UI', sans-serif", background: "#f0f4f8", minHeight: "100vh", color: "#1a202c" }}>
-      {/* TOAST */}
       {toast && (
         <div style={{ position: "fixed", top: 16, right: 16, zIndex: 9999, background: toast.type === "error" ? "#fed7d7" : "#c6f6d5", color: toast.type === "error" ? "#c53030" : "#276749", padding: "10px 18px", borderRadius: 10, fontWeight: 600, boxShadow: "0 4px 20px rgba(0,0,0,0.15)", fontSize: 14, animation: "fadeIn .2s ease" }}>
           {toast.type === "error" ? "❌" : "✅"} {toast.msg}
@@ -853,60 +806,25 @@ useEffect(() => {
             </button>
           ))}
         </div>
+
+        {/* Jam, Absensi, User Info, Keluar — satu blok bersih */}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-  <button 
-    onClick={handleAbsensi}
-    style={{ 
-      padding: "5px 10px", 
-      fontSize: "12px", 
-      background: attendanceStatus ? "#e2e8f0" : "#48bb78", 
-      color: attendanceStatus ? "#4a5568" : "#fff",
-      border: "none", 
-      borderRadius: "4px",
-      cursor: attendanceStatus ? "default" : "pointer"
-    }}
-    disabled={!!attendanceStatus}
-  >
-    {attendanceStatus ? "Sudah Absen" : "Absen Masuk"}
-  </button>
-
-  <div style={{ textAlign: "right" }}>
-    <div style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</div>
-    <div style={{ fontSize: 11, opacity: 0.7 }}>{user.role === "admin" ? "👑 Admin" : "💼 Kasir"}</div>
-  </div>
-  <button onClick={() => { setUser(null); setCart([]); }} style={{ background: "rgba(255,255,255,0.15)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>Keluar</button>
-</div>
-        
-// ... bagian di dalam Header
-<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-
-// Untuk menampilkannya di Header (di samping nama user):
-<div style={{ fontSize: 12, opacity: 0.9 }}>
-  {currentTime.toLocaleTimeString("id-ID")}
-</div>
-
-  
-  {/* ── TOMBOL ABSENSI ── */}
-  <div style={{ display: "flex", gap: "10px", marginRight: "10px" }}>
-    <button onClick={handleAbsensi} style={{ ...S.smBtn, background: "#48bb78", color: "#fff" }}>✅ Masuk</button>
-    <button onClick={handleAbsenPulang} style={{ ...S.smBtn, background: "#e53e3e", color: "#fff" }}>🚪 Pulang</button>
-  </div>
-
-  {/* Info User */}
-  <div style={{ textAlign: "right" }}>
-    <div style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</div>
-    <div style={{ fontSize: 11, opacity: 0.7 }}>{user.role === "admin" ? "👑 Admin" : "💼 Kasir"}</div>
-  </div>
-  
-  {/* Tombol Keluar */}
-  <button onClick={() => { setUser(null); setCart([]); }} style={{ background: "rgba(255,255,255,0.15)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>Keluar</button>
-</div>
+          <div style={{ fontSize: 12, opacity: 0.9 }}>{currentTime.toLocaleTimeString("id-ID")}</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleAbsensi} style={{ ...S.smBtn, background: "#48bb78", color: "#fff" }}>✅ Absen Masuk</button>
+            <button onClick={handleAbsenPulang} style={{ ...S.smBtn, background: "#e53e3e", color: "#fff" }}>🚪 Absen Pulang</button>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</div>
+            <div style={{ fontSize: 11, opacity: 0.7 }}>{user.role === "admin" ? "👑 Admin" : "💼 Kasir"}</div>
+          </div>
+          <button onClick={() => { setUser(null); setCart([]); }} style={{ background: "rgba(255,255,255,0.15)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>Keluar</button>
+        </div>
       </div>
 
       {/* ── TAB: KASIR ── */}
       {tab === "kasir" && (
         <div className="kasir-grid" style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 0, height: "calc(100vh - 62px)" }}>
-          {/* PANEL KIRI */}
           <div style={{ padding: 18, overflowY: "auto" }}>
             <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
               <input placeholder="🔍 Cari produk..." value={search} onChange={e => setSearch(e.target.value)}
@@ -940,7 +858,6 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* PANEL KANAN — Keranjang */}
           <div id="kasir-cart-section" className="kasir-cart-panel" style={{ background: "#fff", borderLeft: "1.5px solid #e2e8f0", display: "flex", flexDirection: "column", height: "calc(100vh - 62px)" }}>
             <div style={{ padding: "14px 16px", borderBottom: "1px solid #e2e8f0", fontWeight: 700, fontSize: 15, color: "#1a365d" }}>
               🛒 Keranjang {cart.length > 0 && <span style={{ background: "#2b6cb0", color: "#fff", borderRadius: 20, padding: "1px 8px", fontSize: 12, marginLeft: 6 }}>{cart.reduce((s,i)=>s+i.qty,0)}</span>}
@@ -969,7 +886,6 @@ useEffect(() => {
                 </div>
               ))}
             </div>
-            {/* Bayar Panel */}
             <div className="kasir-pay-panel" style={{ padding: "12px 14px", borderTop: "1.5px solid #e2e8f0", background: "#f7fafc" }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 13, color: "#4a5568" }}><span>Subtotal</span><span>{fmt(subtotal)}</span></div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
@@ -1001,7 +917,6 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* Tombol melayang khusus HP — loncat cepat ke Keranjang (otomatis disembunyikan di layar lebar/desktop via CSS) */}
           <button
             className="kasir-mobile-cart-btn"
             onClick={() => document.getElementById("kasir-cart-section")?.scrollIntoView({ behavior: "smooth" })}
@@ -1013,7 +928,7 @@ useEffect(() => {
         </div>
       )}
 
-      {/* ── TAB: PRODUK (Admin Only) ── */}
+      {/* ── TAB: PRODUK ── */}
       {tab === "produk" && canAdmin && (
         <div className="tab-page-wrap" style={{ maxWidth: 960, margin: "0 auto", padding: 24 }}>
           <div style={{ background: "#fff", borderRadius: 14, padding: 20, marginBottom: 20, border: "1px solid #e2e8f0" }}>
@@ -1069,7 +984,6 @@ useEffect(() => {
             </table>
             </div>
 
-            {/* Tampilan kartu khusus HP (otomatis disembunyikan di desktop via CSS) */}
             <div className="data-card-list">
               {products.map(p => {
                 const st = getStockStatus(p);
@@ -1166,7 +1080,6 @@ useEffect(() => {
             </table>
             </div>
 
-            {/* Tampilan kartu khusus HP (otomatis disembunyikan di desktop via CSS) */}
             <div className="data-card-list">
               {products.filter(p => {
                 if (stockFilter === "menipis") return (p.stock||0) <= (p.minStock||0) && (p.stock||0) > 0;
@@ -1224,7 +1137,6 @@ useEffect(() => {
               </div>
             ))}
           </div>
-          {/* Form Tambah Catatan */}
           <div style={{ background: "#fff", borderRadius: 14, padding: 20, marginBottom: 20, border: "1px solid #e2e8f0" }}>
             <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 14, color: "#1a365d" }}>📝 Catat Transaksi Keuangan</div>
             <div className="form-grid-stack" style={{ display: "grid", gridTemplateColumns: "140px 1fr 160px 160px", gap: 10, marginBottom: 12 }}>
@@ -1240,7 +1152,6 @@ useEffect(() => {
               {newExpense.type === "pengeluaran" ? "💸 Catat Pengeluaran" : "💰 Catat Pendapatan Lain"}
             </button>
           </div>
-          {/* Daftar Catatan */}
           <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden" }}>
             <div style={{ padding: "14px 18px", borderBottom: "1px solid #e2e8f0", fontWeight: 700, color: "#1a365d" }}>📋 Riwayat Catatan Keuangan</div>
             {expenses.length === 0 ? (
@@ -1333,7 +1244,6 @@ useEffect(() => {
               ))}
             </div>
           </div>
-          {/* Top Produk */}
           <div style={{ background: "#fff", borderRadius: 14, padding: 20, border: "1px solid #e2e8f0" }}>
             <div style={{ fontWeight: 700, fontSize: 15, color: "#1a365d", marginBottom: 14 }}>🏆 Produk Terlaris</div>
             {(() => {
@@ -1386,7 +1296,6 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* QR PEMBAYARAN QRIS */}
           <div style={{ background: "#fff", borderRadius: 14, padding: 24, border: "1px solid #e2e8f0", marginTop: 20 }}>
             <div style={{ fontWeight: 700, fontSize: 16, color: "#1a365d", marginBottom: 6 }}>📱 QR Pembayaran (QRIS)</div>
             <div style={{ fontSize: 12, color: "#718096", marginBottom: 16 }}>Unggah gambar QR code milik Anda agar muncul saat pelanggan memilih pembayaran QRIS di kasir.</div>
@@ -1420,20 +1329,14 @@ useEffect(() => {
         </div>
       )}
 
-      {/* ── MODAL STRUK ── */}
       {showReceipt && <ReceiptModal order={showReceipt} settings={settings} onClose={() => setShowReceipt(null)} />}
-
-      {/* ── MODAL SCANNER (Kamera HP / Scanner Eksternal) ── */}
       {showScanner && <ScannerModal mode={showScanner} onResult={handleScanResult} onClose={() => setShowScanner(null)} />}
-
-      {/* ── MODAL QRIS ── */}
       {showQris && <QrisModal settings={settings} total={total} onConfirm={handlePayQris} onClose={() => setShowQris(false)} />}
 
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
         * { box-sizing: border-box; }
 
-        /* ── Tampilan responsif tab Kasir di HP ── */
         .kasir-mobile-cart-btn { display: none; }
         .data-card-list { display: none; }
         @media (max-width: 860px) {
