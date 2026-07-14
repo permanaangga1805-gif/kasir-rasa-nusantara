@@ -102,18 +102,60 @@ const S = {
   qBtn: { background: "#edf2f7", border: "none", borderRadius: 6, width: 26, height: 26, cursor: "pointer", fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" },
 };
 
-// ── LOGIN PAGE ───────────────────────────────────────────────────────────────
+// ── LOGIN PAGE (REAL-TIME SUPABASE AUTH) ──────────────────────────────────────
 function LoginPage({ onLogin }) {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [showPw, setShowPw] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    const user = USERS.find(u => u.username === username && u.password === password);
-    if (!user) { setErr("Username atau password salah!"); return; }
+  const handleLogin = async () => {
+    if (!email || !password) { 
+      setErr("Email dan password wajib diisi!"); 
+      return; 
+    }
     setErr("");
-    onLogin(user);
+    setLoading(true);
+
+    try {
+      // 1. Verifikasi Email & Password ke cloud Supabase
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: password,
+      });
+
+      if (authError) {
+        throw new Error("Email atau password salah!");
+      }
+
+      // 2. Ambil data profil (nama, role, outlet) dari tabel profiles
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (profileError || !profile) {
+        throw new Error("Data profil pengguna tidak ditemukan di tabel profiles!");
+      }
+
+      // 3. Masukkan data user dari cloud ke dalam sistem kasir
+      onLogin({
+        id: authData.user.id,
+        email: authData.user.email,
+        name: profile.full_name || email.split('@')[0],
+        // Sesuaikan nama role dari database ke format aplikasi Anda
+        role: profile.role === 'super_admin' ? 'admin' : profile.role,
+        outlet_id: profile.outlet_id
+      });
+
+    } catch (error) {
+      console.error("Login Error:", error);
+      setErr(error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -122,35 +164,56 @@ function LoginPage({ onLogin }) {
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ fontSize: 52, marginBottom: 8 }}>🏪</div>
           <div style={{ fontWeight: 800, fontSize: 26, color: "#1a365d" }}>My Cashier</div>
-          <div style={{ color: "#718096", fontSize: 13 }}>Aplikasi Kasir Digital</div>
+          <div style={{ color: "#718096", fontSize: 13 }}>Terhubung ke Cloud Database</div>
         </div>
+        
         {err && <div style={{ background: "#fff5f5", color: "#c53030", padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 16, border: "1px solid #fed7d7" }}>❌ {err}</div>}
+        
         <div style={{ marginBottom: 14 }}>
-          <label style={{ fontSize: 13, fontWeight: 600, color: "#4a5568", display: "block", marginBottom: 6 }}>Username</label>
-          <input value={username} onChange={e => setUsername(e.target.value)} placeholder="admin / kasir"
-            style={S.inp} onKeyDown={e => e.key === "Enter" && handleLogin()} />
+          <label style={{ fontSize: 13, fontWeight: 600, color: "#4a5568", display: "block", marginBottom: 6 }}>Email</label>
+          <input 
+            type="email"
+            value={email} 
+            onChange={e => setEmail(e.target.value)} 
+            placeholder="admin@rasanusantara.co"
+            style={S.inp} 
+            onKeyDown={e => e.key === "Enter" && !loading && handleLogin()} 
+            disabled={loading}
+          />
         </div>
+        
         <div style={{ marginBottom: 20 }}>
           <label style={{ fontSize: 13, fontWeight: 600, color: "#4a5568", display: "block", marginBottom: 6 }}>Password</label>
           <div style={{ position: "relative" }}>
-            <input type={showPw ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••" style={{ ...S.inp, paddingRight: 40 }} onKeyDown={e => e.key === "Enter" && handleLogin()} />
-            <button onClick={() => setShowPw(v => !v)} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 16 }}>{showPw ? "🙈" : "👁️"}</button>
+            <input 
+              type={showPw ? "text" : "password"} 
+              value={password} 
+              onChange={e => setPassword(e.target.value)}
+              placeholder="••••••••" 
+              style={{ ...S.inp, paddingRight: 40 }} 
+              onKeyDown={e => e.key === "Enter" && !loading && handleLogin()}
+              disabled={loading}
+            />
+            <button type="button" onClick={() => setShowPw(v => !v)} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 16 }}>{showPw ? "🙈" : "👁️"}</button>
           </div>
         </div>
-        <button onClick={handleLogin} style={{ ...S.btn, width: "100%", background: "#2b6cb0", color: "#fff", fontSize: 15, padding: 13 }}>
-          Masuk →
+        
+        <button 
+          onClick={handleLogin} 
+          disabled={loading}
+          style={{ ...S.btn, width: "100%", background: loading ? "#a0aec0" : "#2b6cb0", color: "#fff", fontSize: 15, padding: 13, cursor: loading ? "not-allowed" : "pointer" }}
+        >
+          {loading ? "⏳ Memeriksa ke Cloud..." : "Masuk →"}
         </button>
-        <div style={{ marginTop: 20, padding: "12px 14px", background: "#ebf8ff", borderRadius: 10, fontSize: 12, color: "#2c5282" }}>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>Akun Demo:</div>
-          <div>👑 Admin: admin / admin123</div>
-          <div>💼 Kasir: kasir / kasir123</div>
+        
+        <div style={{ marginTop: 20, padding: "12px 14px", background: "#ebf8ff", borderRadius: 10, fontSize: 12, color: "#2c5282", textAlign: "center" }}>
+          <div>🔒 Login diamankan oleh Supabase Auth</div>
+          <div style={{ fontSize: 11, marginTop: 4, opacity: 0.8 }}>Gunakan Email & Password yang terdaftar di cloud</div>
         </div>
       </div>
     </div>
   );
 }
-
 // ── RECEIPT MODAL ────────────────────────────────────────────────────────────
 function ReceiptModal({ order, settings, onClose }) {
   const ref = useRef();
