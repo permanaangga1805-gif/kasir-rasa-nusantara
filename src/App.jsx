@@ -469,18 +469,13 @@ export default function KasirApp() {
   const [showScanner, setShowScanner] = useState(null); // null | "produk" | "kasir"
   const [showQris, setShowQris] = useState(false);
   const [nextOrderNumber, setNextOrderNumber] = useState(() => load("kk_order_counter", 1));
-  // Tambahkan di dalam fungsi KasirApp()
-const [currentTime, setCurrentTime] = useState(new Date());
+  const [currentTime, setCurrentTime] = useState(new Date());
 
 useEffect(() => {
   const timer = setInterval(() => setCurrentTime(new Date()), 1000);
   return () => clearInterval(timer);
 }, []);
 
-// Untuk menampilkannya di Header (di samping nama user):
-<div style={{ fontSize: 12, opacity: 0.9 }}>
-  {currentTime.toLocaleTimeString("id-ID")}
-</div>
 
   useEffect(() => {
   supabase.from('outlets').select('*').then(({ data, error }) => {
@@ -884,6 +879,12 @@ useEffect(() => {
         
 // ... bagian di dalam Header
 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+
+// Untuk menampilkannya di Header (di samping nama user):
+<div style={{ fontSize: 12, opacity: 0.9 }}>
+  {currentTime.toLocaleTimeString("id-ID")}
+</div>
+
   
   {/* ── TOMBOL ABSENSI ── */}
   <div style={{ display: "flex", gap: "10px", marginRight: "10px" }}>
