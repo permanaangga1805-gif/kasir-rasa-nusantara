@@ -474,6 +474,40 @@ export default function KasirApp() {
   useEffect(() => { save("kk_settings", settings); }, [settings]);
   useEffect(() => { save("kk_order_counter", nextOrderNumber); }, [nextOrderNumber]);
 
+  const todayStr = () => new Date().toISOString().split('T')[0];
+
+  // Cek status absensi hari ini setiap kali user login/refresh
+  // — ini yang mencegah status ke-reset saat refresh halaman.
+  // Sumber kebenaran = Supabase, localStorage hanya cache tampilan.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    const cached = load(`kk_attendance_${user.id}_${todayStr()}`, null);
+    if (cached) setAttendanceStatus(cached);
+
+    (async () => {
+      const today = todayStr();
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('user_id', user.id)
+        .gte('check_in_time', `${today}T00:00:00`)
+        .lte('check_in_time', `${today}T23:59:59`)
+        .order('check_in_time', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (cancelled) return;
+      if (!error) {
+        setAttendanceStatus(data || null);
+        save(`kk_attendance_${user.id}_${today}`, data || null);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
   const CATEGORIES = ["Semua", "Makanan", "Minuman", "Snack", "Lainnya"];
 
   const showToast = (msg, type = "success") => {
@@ -564,8 +598,13 @@ export default function KasirApp() {
     showToast("Pembayaran QRIS berhasil! 🎉");
   };
 
-  // ── ABSENSI (pakai jam client, sederhana & stabil) ──
+  // ── ABSENSI: satu akun hanya bisa absen masuk 1x/hari,
+  // absen pulang hanya bisa jika sudah absen masuk & belum absen pulang ──
   const handleAbsensi = async () => {
+    if (attendanceStatus) {
+      return showToast("Anda sudah absen masuk hari ini!", "error");
+    }
+
     const nowTime = new Date();
     const jamMasuk = 8; // Batas jam 08:00
     const isLate = nowTime.getHours() >= jamMasuk;
@@ -578,40 +617,42 @@ export default function KasirApp() {
       status_label: isLate ? "TELAT" : "TEPAT WAKTU"
     };
 
-    const { error } = await supabase.from('attendance').insert([attendanceData]);
+    const { data, error } = await supabase
+      .from('attendance')
+      .insert([attendanceData])
+      .select()
+      .single();
 
     if (error) {
       showToast("Gagal absensi: " + error.message, "error");
     } else {
-      setAttendanceStatus(attendanceData);
-      showToast(`Berhasil Absensi! Status: ${attendanceData.status_label}`);
+      setAttendanceStatus(data);
+      save(`kk_attendance_${user.id}_${todayStr()}`, data);
+      showToast(`Berhasil Absensi! Status: ${data.status_label}`);
     }
   };
 
   const handleAbsenPulang = async () => {
-    const nowTime = new Date();
-    const today = nowTime.toISOString().split('T')[0];
-
-    const { data: existingAttendance } = await supabase
-      .from('attendance')
-      .select('id')
-      .eq('user_id', user.id)
-      .gte('check_in_time', `${today}T00:00:00`)
-      .is('check_out_time', null)
-      .single();
-
-    if (!existingAttendance) {
+    if (!attendanceStatus) {
       return showToast("Anda belum absen masuk hari ini!", "error");
     }
+    if (attendanceStatus.check_out_time) {
+      return showToast("Anda sudah absen pulang hari ini!", "error");
+    }
 
-    const { error } = await supabase
+    const nowTime = new Date();
+    const { data, error } = await supabase
       .from('attendance')
       .update({ check_out_time: nowTime.toISOString() })
-      .eq('id', existingAttendance.id);
+      .eq('id', attendanceStatus.id)
+      .select()
+      .single();
 
     if (error) {
       showToast("Gagal absen pulang: " + error.message, "error");
     } else {
+      setAttendanceStatus(data);
+      save(`kk_attendance_${user.id}_${todayStr()}`, data);
       showToast("Berhasil Absen Pulang! Sampai jumpa besok 👋");
     }
   };
@@ -811,8 +852,30 @@ export default function KasirApp() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ fontSize: 12, opacity: 0.9 }}>{currentTime.toLocaleTimeString("id-ID")}</div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleAbsensi} style={{ ...S.smBtn, background: "#48bb78", color: "#fff" }}>✅ Absen Masuk</button>
-            <button onClick={handleAbsenPulang} style={{ ...S.smBtn, background: "#e53e3e", color: "#fff" }}>🚪 Absen Pulang</button>
+            <button
+              onClick={handleAbsensi}
+              disabled={!!attendanceStatus}
+              style={{
+                ...S.smBtn,
+                background: attendanceStatus ? "#a0aec0" : "#48bb78",
+                color: "#fff",
+                cursor: attendanceStatus ? "not-allowed" : "pointer"
+              }}
+            >
+              {attendanceStatus ? "✅ Sudah Masuk" : "✅ Absen Masuk"}
+            </button>
+            <button
+              onClick={handleAbsenPulang}
+              disabled={!attendanceStatus || !!attendanceStatus?.check_out_time}
+              style={{
+                ...S.smBtn,
+                background: (!attendanceStatus || attendanceStatus?.check_out_time) ? "#a0aec0" : "#e53e3e",
+                color: "#fff",
+                cursor: (!attendanceStatus || attendanceStatus?.check_out_time) ? "not-allowed" : "pointer"
+              }}
+            >
+              {attendanceStatus?.check_out_time ? "🚪 Sudah Pulang" : "🚪 Absen Pulang"}
+            </button>
           </div>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</div>
