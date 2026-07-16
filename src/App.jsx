@@ -726,11 +726,82 @@ function ShiftManagement({ user }) {
   );
 }
 
+// ── MARGIN PRODUK (READ-ONLY — HPP HANYA BISA DIUBAH LANGSUNG DI SUPABASE) ───
+function MarginProdukSection() {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [errored, setErrored] = useState(false);
+
+  useEffect(() => { fetchMargin(); }, []);
+
+  const fetchMargin = async () => {
+    setLoading(true);
+    const { data: rows, error } = await supabase
+      .from('product_margin')
+      .select('*')
+      .order('margin_persen', { ascending: true });
+    if (error) { setErrored(true); setLoading(false); return; }
+    setData(rows || []);
+    setErrored(false);
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ background: "#fff", borderRadius: 14, padding: 20, border: "1px solid #e2e8f0", marginTop: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 8 }}>
+        <div style={{ fontWeight: 700, fontSize: 15, color: "#1a365d" }}>💰 Margin Produk (HPP)</div>
+        <span style={{ fontSize: 11, color: "#a0aec0" }}>🔒 HPP hanya bisa diubah langsung di Supabase</span>
+      </div>
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 24, color: "#a0aec0" }}>⏳ Memuat...</div>
+      ) : errored ? (
+        <div style={{ padding: "14px 16px", background: "#fffaf0", color: "#c05621", fontSize: 13, borderRadius: 10 }}>
+          ⚠️ Belum bisa memuat data margin. Pastikan tabel <code>product_costs</code> & view <code>product_margin</code> sudah dibuat di Supabase (lihat 07_hpp_product_cost.sql).
+        </div>
+      ) : data.length === 0 ? (
+        <div style={{ padding: "14px 16px", background: "#ebf8ff", color: "#2c5282", fontSize: 13, borderRadius: 10 }}>
+          ℹ️ Belum ada HPP yang diisi untuk produk manapun. Isi kolom "hpp" di tabel <code>product_costs</code> lewat Supabase Table Editor.
+        </div>
+      ) : (
+        <div className="data-table-wrap" style={{ overflowX: "auto", marginTop: 10 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#ebf8ff", color: "#2c5282" }}>
+                {["Produk","Harga Jual","HPP","Laba Kotor","Margin"].map(h => (
+                  <th key={h} style={{ padding: "9px 12px", textAlign: "left", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((row, i) => {
+                const tipis = row.margin_persen < 20;
+                return (
+                  <tr key={row.product_id} style={{ borderTop: "1px solid #f0f4f8", background: tipis ? "#fffaf0" : i % 2 === 0 ? "#fff" : "#f7fafc" }}>
+                    <td style={{ padding: "8px 12px", fontWeight: 600, fontSize: 13 }}>{row.nama_produk}</td>
+                    <td style={{ padding: "8px 12px", fontSize: 13 }}>{fmt(row.harga_jual)}</td>
+                    <td style={{ padding: "8px 12px", fontSize: 13, color: "#718096" }}>{fmt(row.hpp)}</td>
+                    <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600, color: row.laba_kotor >= 0 ? "#276749" : "#c53030" }}>{fmt(row.laba_kotor)}</td>
+                    <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 700, color: tipis ? "#c05621" : "#276749" }}>{row.margin_persen}% {tipis ? "⚠️" : ""}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function KasirApp() {
   const [user, setUser]             = useState(() => load("kk_user", null));
   const [attendanceStatus, setAttendanceStatus] = useState(null);
-  const [products, setProducts]     = useState(() => load("kk_products", INITIAL_PRODUCTS));
+  const [products, setProducts]     = useState([]); // sumber: Supabase (products + outlet_stock)
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [categories, setCategories] = useState([]); // dari tabel categories di Supabase
+  const [outletsList, setOutletsList] = useState([]); // untuk super_admin pilih cabang
+  const [selectedOutletId, setSelectedOutletId] = useState(""); // cabang aktif yg sedang dikelola super_admin
   const [orders, setOrders]         = useState(() => load("kk_orders", []));
   const [expenses, setExpenses]     = useState(() => load("kk_expenses", []));
   const [settings, setSettings]     = useState(() => load("kk_settings", INITIAL_SETTINGS));
@@ -743,7 +814,7 @@ export default function KasirApp() {
   const [showReceipt, setShowReceipt] = useState(null);
   const [toast, setToast]           = useState(null);
   const [editProduct, setEditProduct] = useState(null);
-  const [newProduct, setNewProduct] = useState({ name: "", price: "", category: "Makanan", icon: "🛒", stock: "", minStock: "10", barcode: "" });
+  const [newProduct, setNewProduct] = useState({ name: "", price: "", category_id: "", icon: "🛒", stock: "", minStock: "10", barcode: "" });
   const [newExpense, setNewExpense] = useState({ type: "pengeluaran", desc: "", amount: "", date: "" });
   const [editSettings, setEditSettings] = useState(settings);
   const [stockFilter, setStockFilter] = useState("semua");
@@ -759,13 +830,92 @@ export default function KasirApp() {
     return () => clearInterval(timer);
   }, []);
 
-  // persist
+  // persist (produk & stok TIDAK di-persist lokal lagi — sumbernya Supabase)
   useEffect(() => { save("kk_user", user); }, [user]);
-  useEffect(() => { save("kk_products", products); }, [products]);
   useEffect(() => { save("kk_orders", orders); }, [orders]);
   useEffect(() => { save("kk_expenses", expenses); }, [expenses]);
   useEffect(() => { save("kk_settings", settings); }, [settings]);
   useEffect(() => { save("kk_order_counter", nextOrderNumber); }, [nextOrderNumber]);
+
+  // Cabang yang sedang "aktif" untuk operasi produk/stok:
+  // - admin_cabang & kasir: selalu outlet mereka sendiri
+  // - super_admin: bebas pilih lewat dropdown (selectedOutletId)
+  const activeOutletId = user?.role === "admin" ? selectedOutletId : user?.outlet_id;
+
+  // Ambil daftar kategori & daftar cabang sekali di awal (dipakai form Produk)
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const { data: cats } = await supabase.from('categories').select('id, name').order('name');
+      setCategories(cats || []);
+      const { data: outs } = await supabase.from('outlets').select('id, name').eq('is_active', true).order('name');
+      setOutletsList(outs || []);
+    })();
+  }, [user?.id]);
+
+  // Super_admin: begitu daftar cabang datang, otomatis pilih cabang pertama
+  useEffect(() => {
+    if (user?.role === "admin" && !selectedOutletId && outletsList.length > 0) {
+      setSelectedOutletId(outletsList[0].id);
+    }
+  }, [user?.role, outletsList, selectedOutletId]);
+
+  // Ambil katalog produk pusat + gabungkan dengan stok cabang aktif
+  const fetchProducts = async () => {
+    if (!user || !activeOutletId) { setProducts([]); setProductsLoading(false); return; }
+    setProductsLoading(true);
+
+    const { data: prodRows, error: prodErr } = await supabase
+      .from('products')
+      .select('id, name, category_id, price, icon, barcode, is_active, categories(name)')
+      .eq('is_active', true)
+      .order('name');
+
+    if (prodErr) { console.error(prodErr); showToast("Gagal memuat produk: " + prodErr.message, "error"); setProductsLoading(false); return; }
+
+    const { data: stockRows, error: stockErr } = await supabase
+      .from('outlet_stock')
+      .select('product_id, stock, min_stock')
+      .eq('outlet_id', activeOutletId);
+
+    if (stockErr) console.error(stockErr);
+
+    const stockMap = {};
+    (stockRows || []).forEach(s => { stockMap[s.product_id] = s; });
+
+    const merged = (prodRows || []).map(p => ({
+      id: p.id,
+      name: p.name,
+      category_id: p.category_id,
+      category: p.categories?.name || "Lainnya",
+      price: Number(p.price),
+      icon: p.icon || "🛒",
+      barcode: p.barcode || "",
+      stock: stockMap[p.id]?.stock ?? 0,
+      minStock: stockMap[p.id]?.min_stock ?? 10,
+    }));
+
+    setProducts(merged);
+    setProductsLoading(false);
+  };
+
+  useEffect(() => {
+    fetchProducts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, activeOutletId]);
+
+  // Realtime: kalau ada perubahan produk/stok (dari cabang lain, atau kamu
+  // edit langsung di Supabase), daftar produk di aplikasi otomatis refresh.
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel('realtime-products-stock')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'outlet_stock' }, () => fetchProducts())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => fetchProducts())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, activeOutletId]);
 
   const todayStr = () => new Date().toISOString().split('T')[0];
 
@@ -801,7 +951,7 @@ export default function KasirApp() {
     return () => { cancelled = true; };
   }, [user?.id]);
 
-  const CATEGORIES = ["Semua", "Makanan", "Minuman", "Snack", "Lainnya"];
+  const CATEGORIES = ["Semua", ...categories.map(c => c.name)];
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -852,6 +1002,24 @@ export default function KasirApp() {
   const total    = subtotal - discAmt + taxAmt;
   const kembalian = Math.max(0, Number(payAmount) - total);
 
+  // ⚠️ SEMENTARA / NON-ATOMIC: mengurangi stok Supabase setelah bayar
+  // berdasarkan angka stok yang terakhir di-load ke browser. Ini BELUM
+  // aman kalau ada 2 kasir di outlet yang sama transaksi bersamaan persis
+  // (race condition) — untuk itu idealnya pakai RPC atomic `create_order`
+  // yang sudah pernah kamu buat di 02_functions.sql. Begitu file itu
+  // di-share, saya gantikan bagian ini supaya pengurangan stok + insert
+  // order/order_items terjadi dalam satu transaksi atomic di database.
+  const decrementStockAfterSale = async (cartItems) => {
+    for (const item of cartItems) {
+      const newStock = Math.max(0, (item.stock || 0) - item.qty);
+      await supabase.from('outlet_stock').upsert(
+        { outlet_id: activeOutletId, product_id: item.id, stock: newStock, min_stock: item.minStock ?? 10 },
+        { onConflict: 'outlet_id,product_id' }
+      );
+    }
+    fetchProducts();
+  };
+
   const handlePay = () => {
     if (cart.length === 0) return showToast("Keranjang kosong!", "error");
     if (Number(payAmount) < total) return showToast("Uang tidak cukup!", "error");
@@ -866,6 +1034,7 @@ export default function KasirApp() {
       if (!cartItem) return p;
       return { ...p, stock: Math.max(0, (p.stock || 0) - cartItem.qty) };
     }));
+    decrementStockAfterSale(cart);
     setShowReceipt(order);
     setCart([]); setPayAmount(""); setDiscount(0);
     showToast("Pembayaran berhasil! 🎉");
@@ -885,6 +1054,7 @@ export default function KasirApp() {
       if (!cartItem) return p;
       return { ...p, stock: Math.max(0, (p.stock || 0) - cartItem.qty) };
     }));
+    decrementStockAfterSale(cart);
     setShowQris(false);
     setShowReceipt(order);
     setCart([]); setPayAmount(""); setDiscount(0);
@@ -955,7 +1125,7 @@ export default function KasirApp() {
       const existing = products.find(p => p.barcode && p.barcode === code);
       if (existing) {
         setEditProduct(existing);
-        setNewProduct({ name: existing.name, price: String(existing.price), category: existing.category, icon: existing.icon, stock: String(existing.stock || 0), minStock: String(existing.minStock || 10), barcode: existing.barcode || code });
+        setNewProduct({ name: existing.name, price: String(existing.price), category_id: existing.category_id || "", icon: existing.icon, stock: String(existing.stock || 0), minStock: String(existing.minStock || 10), barcode: existing.barcode || code });
         showToast(`Produk ditemukan: ${existing.name}. Form diisi otomatis ✏️`);
       } else {
         setEditProduct(null);
@@ -974,22 +1144,66 @@ export default function KasirApp() {
     }
   };
 
-  // ── PRODUK LOGIC ──
-  const saveProduct = () => {
+  // ── PRODUK LOGIC (Supabase: products = katalog pusat, outlet_stock = stok per cabang) ──
+  const saveProduct = async () => {
     if (!newProduct.name || !newProduct.price) return showToast("Isi nama & harga!", "error");
+    if (!activeOutletId) return showToast("Pilih cabang dulu sebelum menyimpan produk!", "error");
+
+    const productPayload = {
+      name: newProduct.name,
+      price: Number(newProduct.price),
+      category_id: newProduct.category_id || null,
+      icon: newProduct.icon || "🛒",
+      barcode: newProduct.barcode || null,
+    };
+
+    let productId = editProduct?.id;
+
     if (editProduct) {
-      setProducts(prev => prev.map(p => p.id === editProduct.id ? { ...p, ...newProduct, price: Number(newProduct.price), stock: Number(newProduct.stock), minStock: Number(newProduct.minStock) } : p));
-      showToast("Produk diperbarui!");
+      const { error } = await supabase.from('products').update(productPayload).eq('id', editProduct.id);
+      if (error) return showToast("Gagal update produk: " + error.message, "error");
     } else {
-      setProducts(prev => [...prev, { ...newProduct, id: Date.now(), price: Number(newProduct.price), stock: Number(newProduct.stock || 0), minStock: Number(newProduct.minStock || 10) }]);
-      showToast("Produk ditambahkan!");
+      const { data, error } = await supabase.from('products').insert([productPayload]).select().single();
+      if (error) return showToast("Gagal tambah produk: " + error.message, "error");
+      productId = data.id;
     }
+
+    const { error: stockErr } = await supabase.from('outlet_stock').upsert(
+      { outlet_id: activeOutletId, product_id: productId, stock: Number(newProduct.stock || 0), min_stock: Number(newProduct.minStock || 10) },
+      { onConflict: 'outlet_id,product_id' }
+    );
+    if (stockErr) showToast("Produk tersimpan, tapi stok gagal disimpan: " + stockErr.message, "error");
+    else showToast(editProduct ? "Produk diperbarui!" : "Produk ditambahkan!");
+
     setEditProduct(null);
-    setNewProduct({ name: "", price: "", category: "Makanan", icon: "🛒", stock: "", minStock: "10", barcode: "" });
+    setNewProduct({ name: "", price: "", category_id: "", icon: "🛒", stock: "", minStock: "10", barcode: "" });
+    fetchProducts();
   };
 
-  const deleteProduct = (id) => { setProducts(prev => prev.filter(p => p.id !== id)); showToast("Produk dihapus!", "error"); };
-  const startEdit = (p) => { setEditProduct(p); setNewProduct({ name: p.name, price: String(p.price), category: p.category, icon: p.icon, stock: String(p.stock || 0), minStock: String(p.minStock || 10), barcode: p.barcode || "" }); };
+  // Nonaktifkan produk (soft-delete) — bukan hapus permanen, supaya riwayat
+  // transaksi lama (order_items) yang mereferensikan produk ini tetap utuh.
+  const deleteProduct = async (id) => {
+    const { error } = await supabase.from('products').update({ is_active: false }).eq('id', id);
+    if (error) return showToast("Gagal menonaktifkan produk: " + error.message, "error");
+    showToast("Produk dinonaktifkan!", "error");
+    fetchProducts();
+  };
+
+  const startEdit = (p) => { setEditProduct(p); setNewProduct({ name: p.name, price: String(p.price), category_id: p.category_id || "", icon: p.icon, stock: String(p.stock || 0), minStock: String(p.minStock || 10), barcode: p.barcode || "" }); };
+
+  // Tambah stok cepat (dipakai di tab Stok)
+  const addStock = async (product, amount) => {
+    if (!activeOutletId) return showToast("Pilih cabang dulu!", "error");
+    const newStock = (product.stock || 0) + amount;
+    const { error } = await supabase.from('outlet_stock').upsert(
+      { outlet_id: activeOutletId, product_id: product.id, stock: newStock, min_stock: product.minStock ?? 10 },
+      { onConflict: 'outlet_id,product_id' }
+    );
+    if (error) return showToast("Gagal update stok: " + error.message, "error");
+    showToast(`Stok ${product.name} ditambah ${amount}!`);
+    fetchProducts();
+  };
+
 
   // ── KEUANGAN LOGIC ──
   const addExpense = () => {
@@ -1191,6 +1405,14 @@ export default function KasirApp() {
                 <button key={c} onClick={() => setCategory(c)} style={{ padding: "6px 16px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 13, background: category === c ? "#2b6cb0" : "#e2e8f0", color: category === c ? "#fff" : "#4a5568", fontWeight: category === c ? 700 : 400 }}>{c}</button>
               ))}
             </div>
+            {productsLoading ? (
+              <div style={{ textAlign: "center", padding: 40, color: "#a0aec0" }}>⏳ Memuat produk...</div>
+            ) : filtered.length === 0 ? (
+              <div style={{ textAlign: "center", padding: 40, color: "#a0aec0" }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>📦</div>
+                <div>Belum ada produk. Tambahkan lewat tab Produk.</div>
+              </div>
+            ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
               {filtered.map(p => {
                 const st = getStockStatus(p);
@@ -1211,6 +1433,7 @@ export default function KasirApp() {
                 );
               })}
             </div>
+            )}
           </div>
 
           <div id="kasir-cart-section" className="kasir-cart-panel" style={{ background: "#fff", borderLeft: "1.5px solid #e2e8f0", display: "flex", flexDirection: "column", height: "calc(100vh - 62px)" }}>
@@ -1286,13 +1509,23 @@ export default function KasirApp() {
       {/* ── TAB: PRODUK ── */}
       {tab === "produk" && canAdmin && (
         <div className="tab-page-wrap" style={{ maxWidth: 960, margin: "0 auto", padding: 24 }}>
+          {user.role === "admin" && (
+            <div style={{ background: "#ebf8ff", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "#2c5282" }}>🏬 Kelola stok untuk cabang:</span>
+              <select value={selectedOutletId} onChange={e => setSelectedOutletId(e.target.value)} style={{ ...S.inp, width: 240 }}>
+                {outletsList.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+              </select>
+              <span style={{ fontSize: 11, color: "#4a5568" }}>Produk sendiri berlaku untuk semua cabang, tapi jumlah stok di bawah ini khusus cabang yang dipilih.</span>
+            </div>
+          )}
           <div style={{ background: "#fff", borderRadius: 14, padding: 20, marginBottom: 20, border: "1px solid #e2e8f0" }}>
             <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14, color: "#1a365d" }}>{editProduct ? "✏️ Edit Produk" : "➕ Tambah Produk"}</div>
             <div className="form-grid-stack" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 80px 100px 100px", gap: 10 }}>
               <input placeholder="Nama produk" value={newProduct.name} onChange={e => setNewProduct(p => ({ ...p, name: e.target.value }))} style={S.inp} />
               <input placeholder="Harga (Rp)" type="number" value={newProduct.price} onChange={e => setNewProduct(p => ({ ...p, price: e.target.value }))} style={S.inp} />
-              <select value={newProduct.category} onChange={e => setNewProduct(p => ({ ...p, category: e.target.value }))} style={S.inp}>
-                {["Makanan","Minuman","Snack","Lainnya"].map(c => <option key={c}>{c}</option>)}
+              <select value={newProduct.category_id} onChange={e => setNewProduct(p => ({ ...p, category_id: e.target.value }))} style={S.inp}>
+                <option value="">Pilih kategori...</option>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
               <input placeholder="Ikon" value={newProduct.icon} onChange={e => setNewProduct(p => ({ ...p, icon: e.target.value }))} style={{ ...S.inp, textAlign: "center", fontSize: 22 }} />
               <input placeholder="Stok" type="number" value={newProduct.stock} onChange={e => setNewProduct(p => ({ ...p, stock: e.target.value }))} style={S.inp} />
@@ -1304,9 +1537,13 @@ export default function KasirApp() {
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
               <button onClick={saveProduct} style={{ ...S.btn, background: "#2b6cb0", color: "#fff" }}>{editProduct ? "💾 Simpan Perubahan" : "➕ Tambah Produk"}</button>
-              {editProduct && <button onClick={() => { setEditProduct(null); setNewProduct({ name: "", price: "", category: "Makanan", icon: "🛒", stock: "", minStock: "10", barcode: "" }); }} style={{ ...S.btn, background: "#e2e8f0", color: "#4a5568" }}>Batal</button>}
+              {editProduct && <button onClick={() => { setEditProduct(null); setNewProduct({ name: "", price: "", category_id: "", icon: "🛒", stock: "", minStock: "10", barcode: "" }); }} style={{ ...S.btn, background: "#e2e8f0", color: "#4a5568" }}>Batal</button>}
             </div>
+            <div style={{ marginTop: 10, fontSize: 11, color: "#a0aec0" }}>💡 Harga pokok (HPP) & margin produk tidak diatur di sini — lihat penjelasan di tab Laporan, HPP hanya bisa diubah langsung di Supabase.</div>
           </div>
+          {productsLoading ? (
+            <div style={{ textAlign: "center", padding: 30, color: "#a0aec0" }}>⏳ Memuat produk dari Supabase...</div>
+          ) : (
           <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden" }}>
             <div className="data-table-wrap" style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -1367,12 +1604,21 @@ export default function KasirApp() {
               })}
             </div>
           </div>
+          )}
         </div>
       )}
 
       {/* ── TAB: STOK ── */}
       {tab === "stok" && canAdmin && (
         <div className="tab-page-wrap" style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
+          {user.role === "admin" && (
+            <div style={{ background: "#ebf8ff", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "#2c5282" }}>🏬 Cabang:</span>
+              <select value={selectedOutletId} onChange={e => setSelectedOutletId(e.target.value)} style={{ ...S.inp, width: 240 }}>
+                {outletsList.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+              </select>
+            </div>
+          )}
           <div className="stat-grid-3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 20 }}>
             {[
               ["📦 Total Produk", products.length, "#ebf8ff", "#2b6cb0"],
@@ -1422,9 +1668,8 @@ export default function KasirApp() {
                             const inp = document.getElementById(`stk-${p.id}`);
                             const n = Number(inp.value);
                             if (!n || n <= 0) return showToast("Masukkan jumlah stok!", "error");
-                            setProducts(prev => prev.map(pr => pr.id === p.id ? { ...pr, stock: (pr.stock || 0) + n } : pr));
+                            addStock(p, n);
                             inp.value = "";
-                            showToast(`Stok ${p.name} ditambah ${n}!`);
                           }} style={{ ...S.smBtn, background: "#276749", color: "#fff" }}>+ Tambah</button>
                         </div>
                       </td>
@@ -1464,9 +1709,8 @@ export default function KasirApp() {
                         const inp = document.getElementById(`stk-m-${p.id}`);
                         const n = Number(inp.value);
                         if (!n || n <= 0) return showToast("Masukkan jumlah stok!", "error");
-                        setProducts(prev => prev.map(pr => pr.id === p.id ? { ...pr, stock: (pr.stock || 0) + n } : pr));
+                        addStock(p, n);
                         inp.value = "";
-                        showToast(`Stok ${p.name} ditambah ${n}!`);
                       }} style={{ ...S.smBtn, background: "#276749", color: "#fff", whiteSpace: "nowrap" }}>+ Tambah</button>
                     </div>
                   </div>
@@ -1615,6 +1859,8 @@ export default function KasirApp() {
               ));
             })()}
           </div>
+
+          <MarginProdukSection />
         </div>
       )}
 
@@ -1643,7 +1889,7 @@ export default function KasirApp() {
             ))}
             <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
               <button onClick={() => { setSettings(editSettings); showToast("Pengaturan disimpan! ✅"); }} style={{ ...S.btn, background: "#2b6cb0", color: "#fff" }}>💾 Simpan Pengaturan</button>
-              <button onClick={() => { if (window.confirm("Hapus semua data? Ini tidak bisa diurungkan!")) { setOrders([]); setExpenses([]); setProducts(INITIAL_PRODUCTS); setNextOrderNumber(1); showToast("Data direset!", "error"); }}} style={{ ...S.btn, background: "#fff5f5", color: "#e53e3e" }}>🗑️ Reset Semua Data</button>
+              <button onClick={() => { if (window.confirm("Hapus riwayat transaksi & catatan keuangan lokal? (Produk & stok di Supabase TIDAK terpengaruh — kelola itu lewat tab Produk/Stok atau Supabase langsung)")) { setOrders([]); setExpenses([]); setNextOrderNumber(1); showToast("Riwayat lokal direset!", "error"); }}} style={{ ...S.btn, background: "#fff5f5", color: "#e53e3e" }}>🗑️ Reset Riwayat & Keuangan Lokal</button>
             </div>
             <div style={{ marginTop: 24, padding: "14px 16px", background: "#f7fafc", borderRadius: 10, border: "1px solid #e2e8f0" }}>
               <div style={{ fontWeight: 700, fontSize: 14, color: "#1a365d", marginBottom: 8 }}>👥 Daftar Pengguna</div>
