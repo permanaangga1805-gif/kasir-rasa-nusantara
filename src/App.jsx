@@ -433,6 +433,104 @@ function QrisModal({ settings, total, onConfirm, onClose }) {
   );
 }
 
+// ── ADMIN DASHBOARD (MONITORING ABSENSI SEMUA CABANG) ─────────────────────────
+function AdminDashboard() {
+  const [data, setData] = useState([]);
+  const [outlets, setOutlets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filterCabang, setFilterCabang] = useState("Semua");
+
+  useEffect(() => {
+    fetchOutlets();
+  }, []);
+
+  useEffect(() => {
+    fetchAbsensi();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterCabang]);
+
+  const fetchOutlets = async () => {
+    const { data: outletData, error } = await supabase.from('outlets').select('id, name');
+    if (!error && outletData) setOutlets(outletData);
+  };
+
+  const fetchAbsensi = async () => {
+    setLoading(true);
+    let query = supabase.from('monitoring_absensi').select('*');
+    if (filterCabang !== "Semua") query = query.eq('nama_cabang', filterCabang);
+
+    const { data: results, error } = await query.order('check_in_time', { ascending: false });
+    if (!error) setData(results || []);
+    setLoading(false);
+  };
+
+  return (
+    <div className="tab-page-wrap" style={{ maxWidth: 1000, margin: "0 auto", padding: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
+        <div style={{ fontWeight: 700, fontSize: 18, color: "#1a365d" }}>📊 Dashboard Admin Pusat</div>
+        <select value={filterCabang} onChange={(e) => setFilterCabang(e.target.value)} style={{ ...S.inp, width: 220 }}>
+          <option value="Semua">Semua Cabang</option>
+          {outlets.map(o => <option key={o.id} value={o.name}>{o.name}</option>)}
+        </select>
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+        {loading ? (
+          <div style={{ textAlign: "center", padding: 40, color: "#a0aec0" }}>⏳ Memuat data...</div>
+        ) : data.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 40, color: "#a0aec0" }}>
+            <div style={{ fontSize: 40 }}>📭</div>
+            <div>Belum ada data absensi</div>
+          </div>
+        ) : (
+          <>
+            <div className="data-table-wrap" style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "#ebf8ff", color: "#2c5282" }}>
+                    {["Karyawan", "Cabang", "Jam Masuk", "Jam Pulang", "Durasi (Jam)"].map(h => (
+                      <th key={h} style={{ padding: "11px 14px", textAlign: "left", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map((row, i) => (
+                    <tr key={row.id} style={{ borderTop: "1px solid #f0f4f8", background: i % 2 === 0 ? "#fff" : "#f7fafc" }}>
+                      <td style={{ padding: "10px 14px", fontWeight: 600, fontSize: 13, whiteSpace: "nowrap" }}>{row.nama_karyawan}</td>
+                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
+                        <span style={{ background: "#bee3f8", color: "#2b6cb0", padding: "2px 9px", borderRadius: 20, fontSize: 12, fontWeight: 600 }}>{row.nama_cabang}</span>
+                      </td>
+                      <td style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap" }}>{row.check_in_time ? new Date(row.check_in_time).toLocaleTimeString("id-ID") : "-"}</td>
+                      <td style={{ padding: "10px 14px", fontSize: 13, whiteSpace: "nowrap" }}>{row.check_out_time ? new Date(row.check_out_time).toLocaleTimeString("id-ID") : "-"}</td>
+                      <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 700, color: "#2b6cb0" }}>{row.durasi_jam ?? "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="data-card-list">
+              {data.map(row => (
+                <div key={row.id} style={{ padding: "14px 16px", borderBottom: "1px solid #f0f4f8" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8, gap: 8 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: "#2d3748" }}>{row.nama_karyawan}</div>
+                    <span style={{ background: "#bee3f8", color: "#2b6cb0", padding: "2px 9px", borderRadius: 20, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>{row.nama_cabang}</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: "#718096" }}>
+                    Masuk: <strong style={{ color: "#2d3748" }}>{row.check_in_time ? new Date(row.check_in_time).toLocaleTimeString("id-ID") : "-"}</strong>
+                    &nbsp;•&nbsp; Pulang: <strong style={{ color: "#2d3748" }}>{row.check_out_time ? new Date(row.check_out_time).toLocaleTimeString("id-ID") : "-"}</strong>
+                  </div>
+                  <div style={{ fontSize: 13, color: "#2b6cb0", fontWeight: 700, marginTop: 4 }}>Durasi: {row.durasi_jam ?? "-"} jam</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function KasirApp() {
   const [user, setUser]             = useState(() => load("kk_user", null));
@@ -520,7 +618,7 @@ export default function KasirApp() {
   const canAdmin = user.role === "admin";
 
   const TABS = canAdmin
-    ? [["kasir","🛒","Kasir"],["produk","📦","Produk"],["stok","📊","Stok"],["keuangan","💰","Keuangan"],["riwayat","📋","Riwayat"],["laporan","📈","Laporan"],["setting","⚙️","Setting"]]
+    ? [["kasir","🛒","Kasir"],["produk","📦","Produk"],["stok","📊","Stok"],["keuangan","💰","Keuangan"],["riwayat","📋","Riwayat"],["laporan","📈","Laporan"],["monitoring","🧭","Monitoring"],["setting","⚙️","Setting"]]
     : [["kasir","🛒","Kasir"],["riwayat","📋","Riwayat"]];
 
   // ── KASIR LOGIC ──
@@ -1325,6 +1423,9 @@ export default function KasirApp() {
           </div>
         </div>
       )}
+
+      {/* ── TAB: MONITORING (DASHBOARD ADMIN PUSAT) ── */}
+      {tab === "monitoring" && canAdmin && <AdminDashboard />}
 
       {/* ── TAB: SETTING ── */}
       {tab === "setting" && canAdmin && (
