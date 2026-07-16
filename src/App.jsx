@@ -449,6 +449,23 @@ function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterCabang]);
 
+  // ── REALTIME: dengarkan perubahan pada tabel attendance dari Supabase,
+  // setiap ada absen masuk/pulang baru (dari cabang manapun) dashboard
+  // ini langsung refresh datanya sendiri — tanpa perlu reload halaman.
+  useEffect(() => {
+    const channel = supabase
+      .channel('realtime-attendance-monitoring')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'attendance' },
+        () => { fetchAbsensi(); }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterCabang]);
+
   const fetchOutlets = async () => {
     const { data: outletData, error } = await supabase.from('outlets').select('id, name');
     if (!error && outletData) setOutlets(outletData);
@@ -467,7 +484,12 @@ function AdminDashboard() {
   return (
     <div className="tab-page-wrap" style={{ maxWidth: 1000, margin: "0 auto", padding: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
-        <div style={{ fontWeight: 700, fontSize: 18, color: "#1a365d" }}>📊 Dashboard Admin Pusat</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ fontWeight: 700, fontSize: 18, color: "#1a365d" }}>📊 Dashboard Admin Pusat</div>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "#c6f6d5", color: "#276749", padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#276749", display: "inline-block", animation: "pulseDot 1.4s infinite" }} /> LIVE
+          </span>
+        </div>
         <select value={filterCabang} onChange={(e) => setFilterCabang(e.target.value)} style={{ ...S.inp, width: 220 }}>
           <option value="Semua">Semua Cabang</option>
           {outlets.map(o => <option key={o.id} value={o.name}>{o.name}</option>)}
@@ -526,6 +548,179 @@ function AdminDashboard() {
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── SHIFT MANAGEMENT (KELOLA JADWAL SHIFT & ASSIGN KE KARYAWAN) ──────────────
+function ShiftManagement({ user }) {
+  const isSuperAdmin = user.role === "admin"; // super_admin dipetakan jadi "admin" saat login
+  const [outlets, setOutlets] = useState([]);
+  const [shifts, setShifts] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editShift, setEditShift] = useState(null);
+  const [form, setForm] = useState({ name: "", jam_masuk: "08:00", jam_pulang: "16:00", toleransi_menit: "15", outlet_id: "" });
+  const [toast, setToast] = useState(null);
+
+  const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 2500); };
+
+  useEffect(() => { loadAll(); }, []);
+
+  const loadAll = async () => {
+    setLoading(true);
+    const [{ data: outletData }, { data: shiftData }, { data: empData }] = await Promise.all([
+      supabase.from('outlets').select('id, name'),
+      supabase.from('shifts').select('*').order('jam_masuk', { ascending: true }),
+      supabase.from('profiles').select('id, full_name, role, outlet_id, shift_id'),
+    ]);
+    setOutlets(outletData || []);
+    setShifts(shiftData || []);
+    setEmployees((empData || []).filter(e => e.role !== 'super_admin'));
+    if (!isSuperAdmin && !form.outlet_id && user.outlet_id) {
+      setForm(f => ({ ...f, outlet_id: user.outlet_id }));
+    }
+    setLoading(false);
+  };
+
+  const saveShift = async () => {
+    if (!form.name || !form.jam_masuk || !form.jam_pulang) return showToast("Isi nama & jam shift!", "error");
+    const outletId = isSuperAdmin ? form.outlet_id : user.outlet_id;
+    if (!outletId) return showToast("Pilih cabang untuk shift ini!", "error");
+
+    const payload = {
+      name: form.name,
+      jam_masuk: form.jam_masuk,
+      jam_pulang: form.jam_pulang,
+      toleransi_menit: Number(form.toleransi_menit || 0),
+      outlet_id: outletId,
+    };
+
+    if (editShift) {
+      const { error } = await supabase.from('shifts').update(payload).eq('id', editShift.id);
+      if (error) return showToast("Gagal update shift: " + error.message, "error");
+      showToast("Shift diperbarui!");
+    } else {
+      const { error } = await supabase.from('shifts').insert([payload]);
+      if (error) return showToast("Gagal tambah shift: " + error.message, "error");
+      showToast("Shift ditambahkan!");
+    }
+    setEditShift(null);
+    setForm({ name: "", jam_masuk: "08:00", jam_pulang: "16:00", toleransi_menit: "15", outlet_id: isSuperAdmin ? "" : user.outlet_id });
+    loadAll();
+  };
+
+  const startEditShift = (s) => {
+    setEditShift(s);
+    setForm({ name: s.name, jam_masuk: s.jam_masuk?.slice(0,5) || "08:00", jam_pulang: s.jam_pulang?.slice(0,5) || "16:00", toleransi_menit: String(s.toleransi_menit ?? 15), outlet_id: s.outlet_id || "" });
+  };
+
+  const deleteShift = async (id) => {
+    const { error } = await supabase.from('shifts').delete().eq('id', id);
+    if (error) return showToast("Gagal hapus shift (mungkin masih dipakai karyawan): " + error.message, "error");
+    showToast("Shift dihapus!", "error");
+    loadAll();
+  };
+
+  const assignShift = async (employeeId, shiftId) => {
+    const { error } = await supabase.from('profiles').update({ shift_id: shiftId || null }).eq('id', employeeId);
+    if (error) return showToast("Gagal assign shift: " + error.message, "error");
+    setEmployees(prev => prev.map(e => e.id === employeeId ? { ...e, shift_id: shiftId || null } : e));
+    showToast("Shift karyawan diperbarui!");
+  };
+
+  const outletName = (id) => outlets.find(o => o.id === id)?.name || "-";
+
+  return (
+    <div className="tab-page-wrap" style={{ maxWidth: 1000, margin: "0 auto", padding: 24 }}>
+      {toast && (
+        <div style={{ position: "fixed", top: 16, right: 16, zIndex: 9999, background: toast.type === "error" ? "#fed7d7" : "#c6f6d5", color: toast.type === "error" ? "#c53030" : "#276749", padding: "10px 18px", borderRadius: 10, fontWeight: 600, boxShadow: "0 4px 20px rgba(0,0,0,0.15)", fontSize: 14 }}>
+          {toast.type === "error" ? "❌" : "✅"} {toast.msg}
+        </div>
+      )}
+
+      {/* FORM TAMBAH/EDIT SHIFT */}
+      <div style={{ background: "#fff", borderRadius: 14, padding: 20, marginBottom: 20, border: "1px solid #e2e8f0" }}>
+        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14, color: "#1a365d" }}>{editShift ? "✏️ Edit Shift" : "➕ Tambah Shift Baru"}</div>
+        <div className="form-grid-stack" style={{ display: "grid", gridTemplateColumns: isSuperAdmin ? "1fr 140px 140px 110px" : "1fr 140px 140px 110px", gap: 10 }}>
+          <input placeholder="Nama shift (contoh: Shift Pagi)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={S.inp} />
+          <div>
+            <label style={{ fontSize: 11, color: "#718096" }}>Jam Masuk</label>
+            <input type="time" value={form.jam_masuk} onChange={e => setForm(f => ({ ...f, jam_masuk: e.target.value }))} style={S.inp} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: "#718096" }}>Jam Pulang</label>
+            <input type="time" value={form.jam_pulang} onChange={e => setForm(f => ({ ...f, jam_pulang: e.target.value }))} style={S.inp} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: "#718096" }}>Toleransi (mnt)</label>
+            <input type="number" min={0} value={form.toleransi_menit} onChange={e => setForm(f => ({ ...f, toleransi_menit: e.target.value }))} style={S.inp} />
+          </div>
+        </div>
+        {isSuperAdmin && (
+          <div style={{ marginTop: 10 }}>
+            <label style={{ fontSize: 11, color: "#718096" }}>Cabang</label>
+            <select value={form.outlet_id} onChange={e => setForm(f => ({ ...f, outlet_id: e.target.value }))} style={S.inp}>
+              <option value="">Pilih cabang...</option>
+              {outlets.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+          <button onClick={saveShift} style={{ ...S.btn, background: "#2b6cb0", color: "#fff" }}>{editShift ? "💾 Simpan Perubahan" : "➕ Tambah Shift"}</button>
+          {editShift && <button onClick={() => { setEditShift(null); setForm({ name: "", jam_masuk: "08:00", jam_pulang: "16:00", toleransi_menit: "15", outlet_id: isSuperAdmin ? "" : user.outlet_id }); }} style={{ ...S.btn, background: "#e2e8f0", color: "#4a5568" }}>Batal</button>}
+        </div>
+      </div>
+
+      {/* DAFTAR SHIFT */}
+      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden", marginBottom: 20 }}>
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid #e2e8f0", fontWeight: 700, color: "#1a365d" }}>🕒 Daftar Shift</div>
+        {loading ? (
+          <div style={{ textAlign: "center", padding: 30, color: "#a0aec0" }}>⏳ Memuat...</div>
+        ) : shifts.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 30, color: "#a0aec0" }}>Belum ada shift dibuat.</div>
+        ) : shifts.map(s => (
+          <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 18px", borderBottom: "1px solid #f7fafc", flexWrap: "wrap", gap: 8 }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{s.name}</div>
+              <div style={{ fontSize: 12, color: "#718096" }}>
+                {s.jam_masuk?.slice(0,5)} – {s.jam_pulang?.slice(0,5)} · Toleransi {s.toleransi_menit} mnt · {outletName(s.outlet_id)}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={() => startEditShift(s)} style={{ ...S.smBtn, background: "#ebf8ff", color: "#2b6cb0" }}>✏️ Edit</button>
+              <button onClick={() => deleteShift(s.id)} style={{ ...S.smBtn, background: "#fff5f5", color: "#e53e3e" }}>🗑️ Hapus</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ASSIGN SHIFT KE KARYAWAN */}
+      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid #e2e8f0", fontWeight: 700, color: "#1a365d" }}>👤 Atur Shift Karyawan</div>
+        {loading ? (
+          <div style={{ textAlign: "center", padding: 30, color: "#a0aec0" }}>⏳ Memuat...</div>
+        ) : employees.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 30, color: "#a0aec0" }}>Belum ada data karyawan.</div>
+        ) : employees.map(emp => (
+          <div key={emp.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 18px", borderBottom: "1px solid #f7fafc", flexWrap: "wrap", gap: 8 }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{emp.full_name || "(tanpa nama)"}</div>
+              <div style={{ fontSize: 12, color: "#718096" }}>{emp.role} · {outletName(emp.outlet_id)}</div>
+            </div>
+            <select
+              value={emp.shift_id || ""}
+              onChange={e => assignShift(emp.id, e.target.value)}
+              style={{ ...S.inp, width: 220 }}
+            >
+              <option value="">Belum ada shift (default 08:00)</option>
+              {shifts.filter(s => isSuperAdmin || s.outlet_id === emp.outlet_id).map(s => (
+                <option key={s.id} value={s.id}>{s.name} ({s.jam_masuk?.slice(0,5)}–{s.jam_pulang?.slice(0,5)})</option>
+              ))}
+            </select>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -618,7 +813,7 @@ export default function KasirApp() {
   const canAdmin = user.role === "admin";
 
   const TABS = canAdmin
-    ? [["kasir","🛒","Kasir"],["produk","📦","Produk"],["stok","📊","Stok"],["keuangan","💰","Keuangan"],["riwayat","📋","Riwayat"],["laporan","📈","Laporan"],["monitoring","🧭","Monitoring"],["setting","⚙️","Setting"]]
+    ? [["kasir","🛒","Kasir"],["produk","📦","Produk"],["stok","📊","Stok"],["keuangan","💰","Keuangan"],["riwayat","📋","Riwayat"],["laporan","📈","Laporan"],["monitoring","🧭","Monitoring"],["shift","🕒","Shift"],["setting","⚙️","Setting"]]
     : [["kasir","🛒","Kasir"],["riwayat","📋","Riwayat"]];
 
   // ── KASIR LOGIC ──
@@ -704,15 +899,14 @@ export default function KasirApp() {
     }
 
     const nowTime = new Date();
-    const jamMasuk = 8; // Batas jam 08:00
-    const isLate = nowTime.getHours() >= jamMasuk;
 
+    // is_late & status_label TIDAK dihitung di sini lagi — trigger
+    // "calculate_attendance_status" di Supabase yang menentukan otomatis
+    // berdasarkan shift yang di-assign ke karyawan ini (lihat tab Shift).
     const attendanceData = {
       user_id: user.id,
       outlet_id: user.outlet_id,
       check_in_time: nowTime.toISOString(),
-      is_late: isLate,
-      status_label: isLate ? "TELAT" : "TEPAT WAKTU"
     };
 
     const { data, error } = await supabase
@@ -1426,6 +1620,9 @@ export default function KasirApp() {
 
       {/* ── TAB: MONITORING (DASHBOARD ADMIN PUSAT) ── */}
       {tab === "monitoring" && canAdmin && <AdminDashboard />}
+
+      {/* ── TAB: SHIFT (KELOLA JADWAL & ASSIGN KE KARYAWAN) ── */}
+      {tab === "shift" && canAdmin && <ShiftManagement user={user} />}
 
       {/* ── TAB: SETTING ── */}
       {tab === "setting" && canAdmin && (
