@@ -1106,9 +1106,9 @@ function StockTransferPanel({ user, isSuperAdmin, activeOutletId, outletsList, p
       <div style={{ background: "#fff", borderRadius: 14, padding: 20, marginBottom: 20, border: "1px solid #e2e8f0" }}>
         <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14, color: "#1a365d" }}>🔀 Ajukan Mutasi Stok</div>
         <div className="form-grid-stack" style={{ display: "grid", gridTemplateColumns: "170px 1fr 1fr 100px", gap: 10 }}>
-          <select value={form.direction} onChange={e => setForm(f => ({ ...f, direction: e.target.value }))} style={S.inp}>
+          <select value={form.direction} onChange={e => setForm(f => ({ ...f, direction: e.target.value }))} style={S.inp} disabled={!isSuperAdmin}>
             <option value="masuk">Minta dari cabang lain</option>
-            <option value="keluar">Kirim ke cabang lain</option>
+            {isSuperAdmin && <option value="keluar">Kirim ke cabang lain</option>}
           </select>
           <select value={form.otherOutletId} onChange={e => setForm(f => ({ ...f, otherOutletId: e.target.value }))} style={S.inp}>
             <option value="">Pilih cabang...</option>
@@ -1120,6 +1120,7 @@ function StockTransferPanel({ user, isSuperAdmin, activeOutletId, outletsList, p
           </select>
           <input type="number" placeholder="Qty" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} style={S.inp} />
         </div>
+        {!isSuperAdmin && <div style={{ fontSize: 11, color: "#a0aec0", marginTop: 6 }}>Sebagai Admin Cabang, kamu hanya bisa mengajukan permintaan stok — persetujuan dilakukan oleh Admin Pusat.</div>}
         <button onClick={submitRequest} style={{ ...S.btn, background: "#2b6cb0", color: "#fff", marginTop: 12 }}>➕ Ajukan Mutasi</button>
       </div>
 
@@ -1139,7 +1140,7 @@ function StockTransferPanel({ user, isSuperAdmin, activeOutletId, outletsList, p
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <span style={{ background: st.bg, color: st.color, padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700 }}>{st.label}</span>
-                {t.status === "pending" && (
+                {t.status === "pending" && isSuperAdmin && (
                   <>
                     <button onClick={() => resolve(t.id, true)} style={{ ...S.smBtn, background: "#276749", color: "#fff" }}>✅ Setujui</button>
                     <button onClick={() => resolve(t.id, false)} style={{ ...S.smBtn, background: "#fff5f5", color: "#e53e3e" }}>❌ Tolak</button>
@@ -1428,7 +1429,9 @@ export default function KasirApp() {
         ["mutasi","🔀","Mutasi Stok"],["keuangan","💰","Keuangan"],["riwayat","📋","Riwayat"],
         ["laporan","📈","Laporan"],
         ...(isSuperAdmin ? [["monitoring","🧭","Monitoring"]] : []),
-        ["shift","🕒","Shift"],["user","👤","User"],["setting","⚙️","Setting"],
+        ["shift","🕒","Shift"],
+        ...(isSuperAdmin ? [["user","👤","User"]] : []),
+        ["setting","⚙️","Setting"],
       ]
     : [["kasir","🛒","Kasir"],["riwayat","📋","Riwayat"]];
 
@@ -1720,7 +1723,10 @@ export default function KasirApp() {
   const netProfit     = totalIncome - totalExpenses;
 
   // ── LAPORAN EXCEL ──
-  const exportExcel = () => {
+  const exportExcel = async () => {
+    if (!activeOutletId) return showToast("Outlet tidak diketahui.", "error");
+    showToast("Menyiapkan laporan Excel...");
+
     const wb = XLSX.utils.book_new();
 
     const txRows = orders.map(o => ({
@@ -1752,6 +1758,99 @@ export default function KasirApp() {
     wsStok["!cols"] = autoFitColumns(stockRows, [2]);
     applyRupiahFormat(wsStok, ["C"], 2, stockRows.length + 1);
     XLSX.utils.book_append_sheet(wb, wsStok, "Stok");
+
+    // ── Mutasi Stok ──
+    let mutasiQuery = supabase
+      .from('stock_transfers')
+      .select('*, product:product_id(name), from_outlet:from_outlet_id(name), to_outlet:to_outlet_id(name)')
+      .order('created_at', { ascending: false });
+    if (!isSuperAdmin) mutasiQuery = mutasiQuery.or(`from_outlet_id.eq.${activeOutletId},to_outlet_id.eq.${activeOutletId}`);
+    const { data: mutasiData } = await mutasiQuery;
+    const mutasiRows = (mutasiData || []).map(t => ({
+      "Tanggal": new Date(t.created_at).toLocaleString("id-ID"),
+      "Produk": t.product?.name || "-",
+      "Dari Cabang": t.from_outlet?.name || "-",
+      "Ke Cabang": t.to_outlet?.name || "-",
+      "Qty": t.qty,
+      "Status": t.status === "pending" ? "Pending" : t.status === "diterima" ? "Diterima" : "Ditolak",
+    }));
+    const wsMutasi = XLSX.utils.json_to_sheet(mutasiRows);
+    wsMutasi["!cols"] = autoFitColumns(mutasiRows, []);
+    XLSX.utils.book_append_sheet(wb, wsMutasi, "Mutasi Stok");
+
+    // ── Karyawan Aktif (RLS otomatis: super_admin lihat semua, admin_cabang cuma cabangnya) ──
+    const { data: karyawanData } = await supabase
+      .from('profiles')
+      .select('*, outlet:outlet_id(name)')
+      .eq('is_active', true)
+      .order('full_name');
+    const karyawanRows = (karyawanData || []).map(k => ({
+      "Nama": k.full_name,
+      "Peran": k.role,
+      "Cabang": k.outlet?.name || "-",
+      "Bergabung": k.created_at ? new Date(k.created_at).toLocaleDateString("id-ID") : "-",
+    }));
+    const wsKaryawan = XLSX.utils.json_to_sheet(karyawanRows);
+    wsKaryawan["!cols"] = autoFitColumns(karyawanRows, []);
+    XLSX.utils.book_append_sheet(wb, wsKaryawan, "Karyawan Aktif");
+
+    // ── Produk Terlaris (dihitung dari riwayat transaksi yang sudah dimuat) ──
+    const countTerlaris = {};
+    orders.forEach(o => o.items.forEach(i => { countTerlaris[i.name] = (countTerlaris[i.name] || 0) + i.qty; }));
+    const terlarisRows = Object.entries(countTerlaris)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, qty], idx) => ({ "Peringkat": idx + 1, "Produk": name, "Terjual": qty }));
+    const wsTerlaris = XLSX.utils.json_to_sheet(terlarisRows);
+    wsTerlaris["!cols"] = autoFitColumns(terlarisRows, []);
+    XLSX.utils.book_append_sheet(wb, wsTerlaris, "Produk Terlaris");
+
+    // ── HPP & Margin ──
+    const { data: marginData } = await supabase
+      .from('product_margin')
+      .select('*')
+      .order('margin_persen', { ascending: true });
+    const marginRows = (marginData || []).map(m => ({
+      "Produk": m.nama_produk, "Harga Jual": m.harga_jual, "HPP": m.hpp,
+      "Laba Kotor": m.laba_kotor, "Margin (%)": m.margin_persen,
+    }));
+    const wsMargin = XLSX.utils.json_to_sheet(marginRows);
+    wsMargin["!cols"] = autoFitColumns(marginRows, [1, 2, 3]);
+    applyRupiahFormat(wsMargin, ["B", "C", "D"], 2, marginRows.length + 1);
+    XLSX.utils.book_append_sheet(wb, wsMargin, "HPP & Margin");
+
+    // ── Absensi (cabang aktif) ──
+    const { data: absensiData } = await supabase
+      .from('monitoring_absensi')
+      .select('*')
+      .eq('outlet_id', activeOutletId)
+      .order('check_in_time', { ascending: false });
+    const absensiRows = (absensiData || []).map(a => ({
+      "Karyawan": a.nama_karyawan,
+      "Shift": a.nama_shift || "-",
+      "Jam Masuk": a.check_in_time ? new Date(a.check_in_time).toLocaleString("id-ID") : "-",
+      "Jam Pulang": a.check_out_time ? new Date(a.check_out_time).toLocaleString("id-ID") : "-",
+      "Status": a.status_label || "-",
+      "Durasi (jam)": a.durasi_jam ?? "-",
+    }));
+    const wsAbsensi = XLSX.utils.json_to_sheet(absensiRows);
+    wsAbsensi["!cols"] = autoFitColumns(absensiRows, []);
+    XLSX.utils.book_append_sheet(wb, wsAbsensi, "Absensi");
+
+    // ── Shift (cabang aktif) ──
+    const { data: shiftData } = await supabase
+      .from('shifts')
+      .select('*')
+      .eq('outlet_id', activeOutletId)
+      .order('jam_masuk');
+    const shiftRows = (shiftData || []).map(s => ({
+      "Nama Shift": s.name,
+      "Jam Masuk": s.jam_masuk?.slice(0, 5),
+      "Jam Pulang": s.jam_pulang?.slice(0, 5),
+      "Toleransi (menit)": s.toleransi_menit,
+    }));
+    const wsShift = XLSX.utils.json_to_sheet(shiftRows);
+    wsShift["!cols"] = autoFitColumns(shiftRows, []);
+    XLSX.utils.book_append_sheet(wb, wsShift, "Shift");
 
     const summary = [
       { "Keterangan": "Total Pendapatan Penjualan", "Jumlah": orders.reduce((s,o)=>s+o.total,0) },
@@ -1887,7 +1986,7 @@ export default function KasirApp() {
           </div>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</div>
-            <div style={{ fontSize: 11, opacity: 0.7 }}>{user.role === "admin" ? "👑 Admin" : "💼 Kasir"}</div>
+            <div style={{ fontSize: 11, opacity: 0.7 }}>{user.role === "admin" ? "👑 Admin Pusat" : user.role === "admin_cabang" ? "🏬 Admin Cabang" : "💼 Kasir"}</div>
           </div>
           <button onClick={() => { setUser(null); setCart([]); }} style={{ background: "rgba(255,255,255,0.15)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12 }}>Keluar</button>
         </div>
@@ -2020,6 +2119,7 @@ export default function KasirApp() {
               <span style={{ fontSize: 11, color: "#4a5568" }}>Produk sendiri berlaku untuk semua cabang, tapi jumlah stok di bawah ini khusus cabang yang dipilih.</span>
             </div>
           )}
+          {isSuperAdmin && (
           <div style={{ background: "#fff", borderRadius: 14, padding: 20, marginBottom: 20, border: "1px solid #e2e8f0" }}>
             <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14, color: "#1a365d" }}>{editProduct ? "✏️ Edit Produk" : "➕ Tambah Produk"}</div>
             <div className="form-grid-stack" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 80px 100px 100px", gap: 10 }}>
@@ -2037,12 +2137,19 @@ export default function KasirApp() {
               <input placeholder="Barcode produk (scan otomatis atau ketik manual)" value={newProduct.barcode} onChange={e => setNewProduct(p => ({ ...p, barcode: e.target.value }))} style={{ ...S.inp, flex: 1 }} />
               <button onClick={() => setShowScanner("produk")} style={{ ...S.btn, background: "#1a365d", color: "#fff", whiteSpace: "nowrap" }}>📷 Scan Barcode</button>
             </div>
+            <div style={{ fontSize: 11, color: "#a0aec0", marginTop: 4 }}>Bisa pakai kamera HP atau scanner barcode eksternal (USB/Bluetooth) — pilih tab-nya di jendela scan.</div>
             <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
               <button onClick={saveProduct} style={{ ...S.btn, background: "#2b6cb0", color: "#fff" }}>{editProduct ? "💾 Simpan Perubahan" : "➕ Tambah Produk"}</button>
               {editProduct && <button onClick={() => { setEditProduct(null); setNewProduct({ name: "", price: "", category_id: "", icon: "🛒", stock: "", minStock: "10", barcode: "" }); }} style={{ ...S.btn, background: "#e2e8f0", color: "#4a5568" }}>Batal</button>}
             </div>
             <div style={{ marginTop: 10, fontSize: 11, color: "#a0aec0" }}>💡 Harga pokok (HPP) & margin produk tidak diatur di sini — lihat penjelasan di tab Laporan, HPP hanya bisa diubah langsung di Supabase.</div>
           </div>
+          )}
+          {!isSuperAdmin && (
+            <div style={{ background: "#fffaf0", border: "1px solid #feebc8", borderRadius: 12, padding: "12px 16px", marginBottom: 20, fontSize: 13, color: "#c05621" }}>
+              🔒 Katalog produk hanya bisa ditambah/diubah oleh <strong>Admin Pusat</strong>. Kamu bisa lihat daftar produk & stok di bawah (read-only). Kalau stok kurang, ajukan lewat tab <strong>🔀 Mutasi Stok</strong>.
+            </div>
+          )}
           {productsLoading ? (
             <div style={{ textAlign: "center", padding: 30, color: "#a0aec0" }}>⏳ Memuat produk dari Supabase...</div>
           ) : (
@@ -2051,7 +2158,7 @@ export default function KasirApp() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "#ebf8ff", color: "#2c5282" }}>
-                  {["Produk","Kategori","Harga","Stok","Min. Stok","Status","Aksi"].map(h => (
+                  {["Produk","Kategori","Harga","Stok","Min. Stok","Status", ...(isSuperAdmin ? ["Aksi"] : [])].map(h => (
                     <th key={h} style={{ padding: "11px 14px", textAlign: "left", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -2067,10 +2174,12 @@ export default function KasirApp() {
                       <td style={{ padding: "10px 14px", fontWeight: 700, fontSize: 13 }}>{p.stock || 0}</td>
                       <td style={{ padding: "10px 14px", fontSize: 13, color: "#718096" }}>{p.minStock || 0}</td>
                       <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}><span style={{ background: st.bg, color: st.color, padding: "2px 9px", borderRadius: 20, fontSize: 12, fontWeight: 600 }}>{st.label}</span></td>
+                      {isSuperAdmin && (
                       <td style={{ padding: "10px 14px", display: "flex", gap: 6, whiteSpace: "nowrap" }}>
                         <button onClick={() => startEdit(p)} style={{ ...S.smBtn, background: "#ebf8ff", color: "#2b6cb0" }}>✏️ Edit</button>
                         <button onClick={() => deleteProduct(p.id)} style={{ ...S.smBtn, background: "#fff5f5", color: "#e53e3e" }}>🗑️ Hapus</button>
                       </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -2097,10 +2206,12 @@ export default function KasirApp() {
                       <span style={{ fontWeight: 700, color: "#2b6cb0" }}>{fmt(p.price)}</span>
                       <span style={{ color: "#718096" }}>Stok: <strong style={{ color: "#2d3748" }}>{p.stock || 0}</strong> (min {p.minStock || 0})</span>
                     </div>
+                    {isSuperAdmin && (
                     <div style={{ display: "flex", gap: 8 }}>
                       <button onClick={() => startEdit(p)} style={{ ...S.smBtn, flex: 1, background: "#ebf8ff", color: "#2b6cb0", textAlign: "center" }}>✏️ Edit</button>
                       <button onClick={() => deleteProduct(p.id)} style={{ ...S.smBtn, flex: 1, background: "#fff5f5", color: "#e53e3e", textAlign: "center" }}>🗑️ Hapus</button>
                     </div>
+                    )}
                   </div>
                 );
               })}
@@ -2119,6 +2230,11 @@ export default function KasirApp() {
               <select value={selectedOutletId} onChange={e => setSelectedOutletId(e.target.value)} style={{ ...S.inp, width: 240 }}>
                 {outletsList.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
               </select>
+            </div>
+          )}
+          {!isSuperAdmin && (
+            <div style={{ background: "#fffaf0", border: "1px solid #feebc8", borderRadius: 12, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "#c05621" }}>
+              🔒 Stok hanya bisa ditambah oleh <strong>Admin Pusat</strong>. Kalau stok kurang, ajukan lewat tab <strong>🔀 Mutasi Stok</strong>.
             </div>
           )}
           <div className="stat-grid-3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 20 }}>
@@ -2143,7 +2259,7 @@ export default function KasirApp() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "#ebf8ff", color: "#2c5282" }}>
-                  {["Produk","Kategori","Stok Saat Ini","Min. Stok","Status","Tambah Stok"].map(h => (
+                  {["Produk","Kategori","Stok Saat Ini","Min. Stok","Status", ...(isSuperAdmin ? ["Tambah Stok"] : [])].map(h => (
                     <th key={h} style={{ padding: "11px 14px", textAlign: "left", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -2163,6 +2279,7 @@ export default function KasirApp() {
                       <td style={{ padding: "10px 14px", fontWeight: 700, fontSize: 15, color: st.color }}>{p.stock || 0}</td>
                       <td style={{ padding: "10px 14px", fontSize: 13, color: "#718096" }}>{p.minStock || 0}</td>
                       <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}><span style={{ background: st.bg, color: st.color, padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700 }}>{st.label}</span></td>
+                      {isSuperAdmin && (
                       <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
                         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                           <input id={`stk-${p.id}`} type="number" placeholder="Jumlah" style={{ width: 70, padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 13 }} />
@@ -2175,6 +2292,7 @@ export default function KasirApp() {
                           }} style={{ ...S.smBtn, background: "#276749", color: "#fff" }}>+ Tambah</button>
                         </div>
                       </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -2205,6 +2323,7 @@ export default function KasirApp() {
                     <div style={{ fontSize: 13, color: "#718096", marginBottom: 10 }}>
                       Stok saat ini: <strong style={{ color: st.color, fontSize: 15 }}>{p.stock || 0}</strong> &nbsp;•&nbsp; Min: {p.minStock || 0}
                     </div>
+                    {isSuperAdmin && (
                     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <input id={`stk-m-${p.id}`} type="number" placeholder="Jumlah" style={{ flex: 1, padding: "7px 8px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 13 }} />
                       <button onClick={() => {
@@ -2215,6 +2334,7 @@ export default function KasirApp() {
                         inp.value = "";
                       }} style={{ ...S.smBtn, background: "#276749", color: "#fff", whiteSpace: "nowrap" }}>+ Tambah</button>
                     </div>
+                    )}
                   </div>
                 );
               })}
@@ -2378,7 +2498,7 @@ export default function KasirApp() {
       {tab === "shift" && canManage && <ShiftManagement user={user} />}
 
       {/* ── TAB: USER (MANAJEMEN KARYAWAN) ── */}
-      {tab === "user" && canManage && <UserManagement user={user} isSuperAdmin={isSuperAdmin} activeOutletId={activeOutletId} outletsList={outletsList} />}
+      {tab === "user" && isSuperAdmin && <UserManagement user={user} isSuperAdmin={isSuperAdmin} activeOutletId={activeOutletId} outletsList={outletsList} />}
 
       {/* ── TAB: MUTASI STOK ── */}
       {tab === "mutasi" && canManage && <StockTransferPanel user={user} isSuperAdmin={isSuperAdmin} activeOutletId={activeOutletId} outletsList={outletsList} products={products} showToast={showToast} />}
