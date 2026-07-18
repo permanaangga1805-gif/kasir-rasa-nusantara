@@ -52,26 +52,6 @@ function applyRupiahFormat(ws, colLetters, firstDataRow, lastDataRow) {
 
 const orderNo = (o) => (o && o.orderNumber) ? String(o.orderNumber).padStart(5, "0") : String(o.id).slice(-6);
 
-const USERS = [
-  { id: 1, username: "admin", password: "admin123", role: "admin", name: "Administrator" },
-  { id: 2, username: "kasir", password: "kasir123", role: "kasir", name: "Kasir 1" },
-];
-
-const INITIAL_PRODUCTS = [
-  { id: 1, name: "Nasi Goreng Spesial", price: 25000, category: "Makanan", icon: "🍳", stock: 50, minStock: 10, barcode: "8990000000011" },
-  { id: 2, name: "Mie Ayam Bakso",      price: 20000, category: "Makanan", icon: "🍜", stock: 8,  minStock: 10, barcode: "8990000000028" },
-  { id: 3, name: "Soto Ayam",           price: 18000, category: "Makanan", icon: "🥣", stock: 30, minStock: 10, barcode: "8990000000035" },
-  { id: 4, name: "Ayam Bakar",          price: 30000, category: "Makanan", icon: "🍗", stock: 5,  minStock: 10, barcode: "8990000000042" },
-  { id: 5, name: "Gado-Gado",           price: 15000, category: "Makanan", icon: "🥗", stock: 25, minStock: 10, barcode: "8990000000059" },
-  { id: 6, name: "Es Teh Manis",        price: 5000,  category: "Minuman", icon: "🍵", stock: 100,minStock: 20, barcode: "8990000000066" },
-  { id: 7, name: "Jus Alpukat",         price: 15000, category: "Minuman", icon: "🥑", stock: 12, minStock: 15, barcode: "8990000000073" },
-  { id: 8, name: "Es Jeruk",            price: 8000,  category: "Minuman", icon: "🍊", stock: 3,  minStock: 15, barcode: "8990000000080" },
-  { id: 9, name: "Air Mineral",         price: 5000,  category: "Minuman", icon: "💧", stock: 60, minStock: 20, barcode: "8990000000097" },
-  { id: 10,name: "Kopi Hitam",          price: 8000,  category: "Minuman", icon: "☕", stock: 40, minStock: 15, barcode: "8990000000103" },
-  { id: 11,name: "Kerupuk",             price: 3000,  category: "Snack",   icon: "🥨", stock: 7,  minStock: 10, barcode: "8990000000110" },
-  { id: 12,name: "Pisang Goreng",       price: 10000, category: "Snack",   icon: "🍌", stock: 20, minStock: 10, barcode: "8990000000127" },
-];
-
 const INITIAL_SETTINGS = {
   storeName: "Rasa nusantara.co",
   storeAddress: "Jl. Ace Tabrani No.39, Kp.Siranggap rt. 003 rw. 004, Desa Nanggung, Kecamatan Nanggung, Kabupaten Bogor 16650, Bogor",
@@ -99,9 +79,12 @@ const S = {
 
 // ── LOGIN PAGE (REAL-TIME SUPABASE AUTH) ──────────────────────────────────────
 function LoginPage({ onLogin }) {
+  const [mode, setMode] = useState("login"); // "login" | "daftar"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
   const [err, setErr] = useState("");
+  const [info, setInfo] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -110,7 +93,7 @@ function LoginPage({ onLogin }) {
       setErr("Email dan password wajib diisi!");
       return;
     }
-    setErr("");
+    setErr(""); setInfo("");
     setLoading(true);
 
     try {
@@ -133,6 +116,11 @@ function LoginPage({ onLogin }) {
         throw new Error("Data profil pengguna tidak ditemukan di tabel profiles!");
       }
 
+      if (!profile.is_active) {
+        await supabase.auth.signOut();
+        throw new Error("Akun kamu belum diaktifkan oleh admin. Hubungi admin cabang/pusat ya.");
+      }
+
       onLogin({
         id: authData.user.id,
         email: authData.user.email,
@@ -149,16 +137,59 @@ function LoginPage({ onLogin }) {
     }
   };
 
+  const handleRegister = async () => {
+    if (!fullName || !email || !password) {
+      setErr("Nama, email, dan password wajib diisi!");
+      return;
+    }
+    if (password.length < 6) {
+      setErr("Password minimal 6 karakter.");
+      return;
+    }
+    setErr(""); setInfo("");
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: { data: { full_name: fullName } },
+      });
+      if (error) throw new Error(error.message);
+
+      setInfo("Akun berhasil dibuat! Tunggu admin mengaktifkan akun kamu sebelum bisa login (biasanya diberi tahu langsung oleh admin cabang/pusat).");
+      setMode("login");
+      setPassword("");
+    } catch (error) {
+      console.error("Register Error:", error);
+      setErr(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #1a365d 0%, #2b6cb0 100%)", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ background: "#fff", borderRadius: 20, padding: "40px 36px", width: 360, boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
           <div style={{ fontSize: 52, marginBottom: 8 }}>🏪</div>
           <div style={{ fontWeight: 800, fontSize: 26, color: "#1a365d" }}>My Cashier</div>
           <div style={{ color: "#718096", fontSize: 13 }}>Terhubung ke Cloud Database</div>
         </div>
 
+        <div style={{ display: "flex", gap: 6, marginBottom: 20, background: "#f7fafc", borderRadius: 10, padding: 4 }}>
+          <button onClick={() => { setMode("login"); setErr(""); setInfo(""); }} style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13, background: mode === "login" ? "#2b6cb0" : "transparent", color: mode === "login" ? "#fff" : "#4a5568" }}>Masuk</button>
+          <button onClick={() => { setMode("daftar"); setErr(""); setInfo(""); }} style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13, background: mode === "daftar" ? "#2b6cb0" : "transparent", color: mode === "daftar" ? "#fff" : "#4a5568" }}>Daftar Akun</button>
+        </div>
+
         {err && <div style={{ background: "#fff5f5", color: "#c53030", padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 16, border: "1px solid #fed7d7" }}>❌ {err}</div>}
+        {info && <div style={{ background: "#f0fff4", color: "#276749", padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 16, border: "1px solid #c6f6d5" }}>✅ {info}</div>}
+
+        {mode === "daftar" && (
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: 13, fontWeight: 600, color: "#4a5568", display: "block", marginBottom: 6 }}>Nama Lengkap</label>
+            <input value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Nama kamu" style={S.inp} disabled={loading} />
+          </div>
+        )}
 
         <div style={{ marginBottom: 14 }}>
           <label style={{ fontSize: 13, fontWeight: 600, color: "#4a5568", display: "block", marginBottom: 6 }}>Email</label>
@@ -168,7 +199,7 @@ function LoginPage({ onLogin }) {
             onChange={e => setEmail(e.target.value)}
             placeholder="admin@rasanusantara.co"
             style={S.inp}
-            onKeyDown={e => e.key === "Enter" && !loading && handleLogin()}
+            onKeyDown={e => e.key === "Enter" && !loading && (mode === "login" ? handleLogin() : handleRegister())}
             disabled={loading}
           />
         </div>
@@ -182,24 +213,40 @@ function LoginPage({ onLogin }) {
               onChange={e => setPassword(e.target.value)}
               placeholder="••••••••"
               style={{ ...S.inp, paddingRight: 40 }}
-              onKeyDown={e => e.key === "Enter" && !loading && handleLogin()}
+              onKeyDown={e => e.key === "Enter" && !loading && (mode === "login" ? handleLogin() : handleRegister())}
               disabled={loading}
             />
             <button type="button" onClick={() => setShowPw(v => !v)} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 16 }}>{showPw ? "🙈" : "👁️"}</button>
           </div>
         </div>
 
-        <button
-          onClick={handleLogin}
-          disabled={loading}
-          style={{ ...S.btn, width: "100%", background: loading ? "#a0aec0" : "#2b6cb0", color: "#fff", fontSize: 15, padding: 13, cursor: loading ? "not-allowed" : "pointer" }}
-        >
-          {loading ? "⏳ Memeriksa ke Cloud..." : "Masuk →"}
-        </button>
+        {mode === "login" ? (
+          <button
+            onClick={handleLogin}
+            disabled={loading}
+            style={{ ...S.btn, width: "100%", background: loading ? "#a0aec0" : "#2b6cb0", color: "#fff", fontSize: 15, padding: 13, cursor: loading ? "not-allowed" : "pointer" }}
+          >
+            {loading ? "⏳ Memeriksa ke Cloud..." : "Masuk →"}
+          </button>
+        ) : (
+          <button
+            onClick={handleRegister}
+            disabled={loading}
+            style={{ ...S.btn, width: "100%", background: loading ? "#a0aec0" : "#276749", color: "#fff", fontSize: 15, padding: 13, cursor: loading ? "not-allowed" : "pointer" }}
+          >
+            {loading ? "⏳ Membuat akun..." : "Daftar →"}
+          </button>
+        )}
 
         <div style={{ marginTop: 20, padding: "12px 14px", background: "#ebf8ff", borderRadius: 10, fontSize: 12, color: "#2c5282", textAlign: "center" }}>
-          <div>🔒 Login diamankan oleh Supabase Auth</div>
-          <div style={{ fontSize: 11, marginTop: 4, opacity: 0.8 }}>Gunakan Email & Password yang terdaftar di cloud</div>
+          {mode === "login" ? (
+            <>
+              <div>🔒 Login diamankan oleh Supabase Auth</div>
+              <div style={{ fontSize: 11, marginTop: 4, opacity: 0.8 }}>Akun baru? Belum bisa masuk sampai diaktifkan admin.</div>
+            </>
+          ) : (
+            <div>Akun yang baru daftar butuh persetujuan admin (cabang/pusat) sebelum bisa dipakai.</div>
+          )}
         </div>
       </div>
     </div>
@@ -793,6 +840,320 @@ function MarginProdukSection() {
   );
 }
 
+// ── AUDIT LOG (READ-ONLY — dicatat otomatis oleh trigger di Supabase) ────────
+function AuditLogSection() {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchLogs = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('audit_log')
+      .select('*, actor:actor_id(full_name)')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (!error) setLogs(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchLogs(); }, []);
+
+  useEffect(() => {
+    const channel = supabase.channel('realtime-audit-log')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_log' }, () => fetchLogs())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  const actionLabel = (a) => ({
+    NONAKTIFKAN_PRODUK: "🚫 Nonaktifkan produk",
+    AKTIFKAN_PRODUK: "✅ Aktifkan produk",
+    UBAH_HARGA: "✏️ Ubah harga",
+    UBAH_ROLE: "🔑 Ubah peran user",
+    AKTIFKAN_USER: "✅ Aktifkan user",
+    NONAKTIFKAN_USER: "🚫 Nonaktifkan user",
+    PINDAH_CABANG: "🏬 Pindah cabang",
+    STOCK_TRANSFER_DITERIMA: "🔀 Mutasi stok diterima",
+    STOCK_TRANSFER_DITOLAK: "🔀 Mutasi stok ditolak",
+  }[a] || a);
+
+  return (
+    <div style={{ background: "#fff", borderRadius: 14, padding: 20, border: "1px solid #e2e8f0", marginTop: 20 }}>
+      <div style={{ fontWeight: 700, fontSize: 15, color: "#1a365d", marginBottom: 10 }}>🧾 Audit Log (50 terbaru)</div>
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 20, color: "#a0aec0" }}>⏳ Memuat...</div>
+      ) : logs.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 20, color: "#a0aec0" }}>Belum ada aktivitas tercatat.</div>
+      ) : (
+        <div style={{ maxHeight: 320, overflowY: "auto" }}>
+          {logs.map(l => (
+            <div key={l.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 0", borderBottom: "1px solid #f7fafc", fontSize: 13 }}>
+              <div>
+                <span style={{ fontWeight: 600 }}>{actionLabel(l.action)}</span>
+                <span style={{ color: "#718096" }}> — {l.actor?.full_name || "sistem"}</span>
+                {l.detail && <div style={{ fontSize: 11, color: "#a0aec0" }}>{JSON.stringify(l.detail)}</div>}
+              </div>
+              <div style={{ color: "#a0aec0", fontSize: 11, whiteSpace: "nowrap" }}>{new Date(l.created_at).toLocaleString("id-ID")}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── USER MANAGEMENT (approval akun baru + kelola karyawan) ───────────────────
+function UserManagement({ user, isSuperAdmin, outletsList }) {
+  const [profilesList, setProfilesList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState(null);
+  const [assignDraft, setAssignDraft] = useState({});
+
+  const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 2500); };
+
+  useEffect(() => { loadProfiles(); }, []);
+
+  useEffect(() => {
+    const channel = supabase.channel('realtime-profiles')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => loadProfiles())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  const loadProfiles = async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+    if (!error) setProfilesList(data || []);
+    setLoading(false);
+  };
+
+  const outletName = (id) => outletsList.find(o => o.id === id)?.name || "-";
+  const pending = profilesList.filter(p => !p.is_active);
+  const active = profilesList.filter(p => p.is_active);
+
+  const approveUser = async (profileId) => {
+    const draft = assignDraft[profileId] || {};
+    if (!draft.outlet_id || !draft.role) return showToast("Pilih cabang & peran dulu!", "error");
+    const { error } = await supabase.from('profiles').update({ outlet_id: draft.outlet_id, role: draft.role, is_active: true }).eq('id', profileId);
+    if (error) return showToast("Gagal aktivasi: " + error.message, "error");
+    showToast("Karyawan diaktifkan!");
+    loadProfiles();
+  };
+
+  const toggleActive = async (p) => {
+    const { error } = await supabase.from('profiles').update({ is_active: !p.is_active }).eq('id', p.id);
+    if (error) return showToast("Gagal update: " + error.message, "error");
+    showToast(p.is_active ? "User dinonaktifkan" : "User diaktifkan");
+    loadProfiles();
+  };
+
+  const changeRole = async (p, newRole) => {
+    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', p.id);
+    if (error) return showToast("Gagal ubah role: " + error.message, "error");
+    showToast("Role diperbarui!");
+    loadProfiles();
+  };
+
+  const changeOutlet = async (p, newOutletId) => {
+    const { error } = await supabase.from('profiles').update({ outlet_id: newOutletId || null }).eq('id', p.id);
+    if (error) return showToast("Gagal pindah cabang: " + error.message, "error");
+    showToast("Cabang diperbarui!");
+    loadProfiles();
+  };
+
+  return (
+    <div className="tab-page-wrap" style={{ maxWidth: 1000, margin: "0 auto", padding: 24 }}>
+      {toast && (
+        <div style={{ position: "fixed", top: 16, right: 16, zIndex: 9999, background: toast.type === "error" ? "#fed7d7" : "#c6f6d5", color: toast.type === "error" ? "#c53030" : "#276749", padding: "10px 18px", borderRadius: 10, fontWeight: 600, boxShadow: "0 4px 20px rgba(0,0,0,0.15)", fontSize: 14 }}>
+          {toast.type === "error" ? "❌" : "✅"} {toast.msg}
+        </div>
+      )}
+
+      {isSuperAdmin && (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden", marginBottom: 20 }}>
+          <div style={{ padding: "14px 18px", borderBottom: "1px solid #e2e8f0", fontWeight: 700, color: "#1a365d" }}>
+            ⏳ Menunggu Aktivasi {pending.length > 0 && <span style={{ background: "#e53e3e", color: "#fff", borderRadius: 20, padding: "1px 8px", fontSize: 12, marginLeft: 6 }}>{pending.length}</span>}
+          </div>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: 24, color: "#a0aec0" }}>⏳ Memuat...</div>
+          ) : pending.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 24, color: "#a0aec0" }}>Tidak ada akun baru yang menunggu.</div>
+          ) : pending.map(p => (
+            <div key={p.id} style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "12px 18px", borderBottom: "1px solid #f7fafc" }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{p.full_name}</div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <select value={assignDraft[p.id]?.outlet_id || ""} onChange={e => setAssignDraft(d => ({ ...d, [p.id]: { ...d[p.id], outlet_id: e.target.value } }))} style={{ ...S.inp, width: 180 }}>
+                  <option value="">Pilih cabang</option>
+                  {outletsList.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                </select>
+                <select value={assignDraft[p.id]?.role || "kasir"} onChange={e => setAssignDraft(d => ({ ...d, [p.id]: { ...d[p.id], role: e.target.value } }))} style={{ ...S.inp, width: 150 }}>
+                  <option value="kasir">Kasir</option>
+                  <option value="admin_cabang">Admin Cabang</option>
+                </select>
+                <button onClick={() => approveUser(p.id)} style={{ ...S.smBtn, background: "#276749", color: "#fff" }}>✅ Aktifkan</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid #e2e8f0", fontWeight: 700, color: "#1a365d" }}>👥 Karyawan Aktif</div>
+        {loading ? (
+          <div style={{ textAlign: "center", padding: 24, color: "#a0aec0" }}>⏳ Memuat...</div>
+        ) : active.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 24, color: "#a0aec0" }}>Belum ada karyawan aktif.</div>
+        ) : active.map(p => (
+          <div key={p.id} style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "12px 18px", borderBottom: "1px solid #f7fafc" }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{p.full_name} {p.id === user.id && <span style={{ fontSize: 11, color: "#a0aec0" }}>(kamu)</span>}</div>
+              <div style={{ fontSize: 12, color: "#718096" }}>{outletName(p.outlet_id)}</div>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              {isSuperAdmin ? (
+                <>
+                  <select value={p.outlet_id || ""} onChange={e => changeOutlet(p, e.target.value)} style={{ ...S.inp, width: 170 }}>
+                    <option value="">- (tanpa cabang) -</option>
+                    {outletsList.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  </select>
+                  <select value={p.role} onChange={e => changeRole(p, e.target.value)} style={{ ...S.inp, width: 140 }}>
+                    <option value="kasir">Kasir</option>
+                    <option value="admin_cabang">Admin Cabang</option>
+                    <option value="super_admin">Super Admin</option>
+                  </select>
+                </>
+              ) : (
+                <span style={{ background: "#bee3f8", color: "#2b6cb0", padding: "2px 9px", borderRadius: 20, fontSize: 12, fontWeight: 600 }}>{p.role}</span>
+              )}
+              {p.id !== user.id && (
+                <button onClick={() => toggleActive(p)} style={{ ...S.smBtn, background: p.is_active ? "#fff5f5" : "#f0fff4", color: p.is_active ? "#e53e3e" : "#276749" }}>
+                  {p.is_active ? "🚫 Nonaktifkan" : "✅ Aktifkan"}
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 16, fontSize: 12, color: "#a0aec0" }}>
+        💡 Karyawan baru mendaftar sendiri lewat halaman "Daftar Akun" di layar login. Akunnya otomatis masuk ke "Menunggu Aktivasi" (khusus super_admin) untuk ditugaskan ke cabang & peran.
+      </div>
+    </div>
+  );
+}
+
+// ── MUTASI STOK ANTAR CABANG ──────────────────────────────────────────────────
+function StockTransferPanel({ user, isSuperAdmin, activeOutletId, outletsList, products, showToast }) {
+  const [transfers, setTransfers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ direction: "masuk", otherOutletId: "", productId: "", qty: "" });
+
+  const fetchTransfers = async () => {
+    if (!activeOutletId) { setTransfers([]); setLoading(false); return; }
+    setLoading(true);
+    let query = supabase
+      .from('stock_transfers')
+      .select('*, product:product_id(name, icon), from_outlet:from_outlet_id(name), to_outlet:to_outlet_id(name)')
+      .order('created_at', { ascending: false });
+    if (!isSuperAdmin) query = query.or(`from_outlet_id.eq.${activeOutletId},to_outlet_id.eq.${activeOutletId}`);
+    const { data, error } = await query;
+    if (!error) setTransfers(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchTransfers(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [activeOutletId]);
+
+  useEffect(() => {
+    if (!activeOutletId) return;
+    const channel = supabase.channel('realtime-stock-transfers-' + activeOutletId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_transfers' }, () => fetchTransfers())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOutletId]);
+
+  const submitRequest = async () => {
+    if (!form.otherOutletId || !form.productId || !form.qty) return showToast("Lengkapi form dulu!", "error");
+    const qty = Number(form.qty);
+    if (qty <= 0) return showToast("Jumlah harus lebih dari 0", "error");
+
+    const payload = form.direction === "masuk"
+      ? { from_outlet_id: form.otherOutletId, to_outlet_id: activeOutletId, product_id: form.productId, qty, requested_by: user.id }
+      : { from_outlet_id: activeOutletId, to_outlet_id: form.otherOutletId, product_id: form.productId, qty, requested_by: user.id };
+
+    const { error } = await supabase.from('stock_transfers').insert([payload]);
+    if (error) return showToast("Gagal ajukan mutasi: " + error.message, "error");
+    showToast("Mutasi stok diajukan!");
+    setForm({ direction: "masuk", otherOutletId: "", productId: "", qty: "" });
+    fetchTransfers();
+  };
+
+  const resolve = async (id, approve) => {
+    const { error } = await supabase.rpc('resolve_stock_transfer', { p_transfer_id: id, p_approve: approve });
+    if (error) return showToast("Gagal proses: " + error.message, "error");
+    showToast(approve ? "Mutasi disetujui & stok dipindahkan!" : "Mutasi ditolak.");
+    fetchTransfers();
+  };
+
+  const statusBadge = (s) => {
+    if (s === "pending") return { label: "⏳ Pending", bg: "#fffaf0", color: "#c05621" };
+    if (s === "diterima") return { label: "✅ Diterima", bg: "#f0fff4", color: "#276749" };
+    return { label: "❌ Ditolak", bg: "#fff5f5", color: "#c53030" };
+  };
+
+  return (
+    <div className="tab-page-wrap" style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
+      <div style={{ background: "#fff", borderRadius: 14, padding: 20, marginBottom: 20, border: "1px solid #e2e8f0" }}>
+        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14, color: "#1a365d" }}>🔀 Ajukan Mutasi Stok</div>
+        <div className="form-grid-stack" style={{ display: "grid", gridTemplateColumns: "170px 1fr 1fr 100px", gap: 10 }}>
+          <select value={form.direction} onChange={e => setForm(f => ({ ...f, direction: e.target.value }))} style={S.inp}>
+            <option value="masuk">Minta dari cabang lain</option>
+            <option value="keluar">Kirim ke cabang lain</option>
+          </select>
+          <select value={form.otherOutletId} onChange={e => setForm(f => ({ ...f, otherOutletId: e.target.value }))} style={S.inp}>
+            <option value="">Pilih cabang...</option>
+            {outletsList.filter(o => o.id !== activeOutletId).map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+          <select value={form.productId} onChange={e => setForm(f => ({ ...f, productId: e.target.value }))} style={S.inp}>
+            <option value="">Pilih produk...</option>
+            {products.map(p => <option key={p.id} value={p.id}>{p.icon} {p.name}</option>)}
+          </select>
+          <input type="number" placeholder="Qty" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} style={S.inp} />
+        </div>
+        <button onClick={submitRequest} style={{ ...S.btn, background: "#2b6cb0", color: "#fff", marginTop: 12 }}>➕ Ajukan Mutasi</button>
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid #e2e8f0", fontWeight: 700, color: "#1a365d" }}>📋 Riwayat Mutasi</div>
+        {loading ? (
+          <div style={{ textAlign: "center", padding: 30, color: "#a0aec0" }}>⏳ Memuat...</div>
+        ) : transfers.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 30, color: "#a0aec0" }}>Belum ada mutasi stok.</div>
+        ) : transfers.map(t => {
+          const st = statusBadge(t.status);
+          return (
+            <div key={t.id} style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "12px 18px", borderBottom: "1px solid #f7fafc" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{t.product?.icon} {t.product?.name} × {t.qty}</div>
+                <div style={{ fontSize: 12, color: "#718096" }}>{t.from_outlet?.name} → {t.to_outlet?.name}</div>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ background: st.bg, color: st.color, padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700 }}>{st.label}</span>
+                {t.status === "pending" && (
+                  <>
+                    <button onClick={() => resolve(t.id, true)} style={{ ...S.smBtn, background: "#276749", color: "#fff" }}>✅ Setujui</button>
+                    <button onClick={() => resolve(t.id, false)} style={{ ...S.smBtn, background: "#fff5f5", color: "#e53e3e" }}>❌ Tolak</button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function KasirApp() {
   const [user, setUser]             = useState(() => load("kk_user", null));
@@ -802,9 +1163,11 @@ export default function KasirApp() {
   const [categories, setCategories] = useState([]); // dari tabel categories di Supabase
   const [outletsList, setOutletsList] = useState([]); // untuk super_admin pilih cabang
   const [selectedOutletId, setSelectedOutletId] = useState(""); // cabang aktif yg sedang dikelola super_admin
-  const [orders, setOrders]         = useState(() => load("kk_orders", []));
-  const [expenses, setExpenses]     = useState(() => load("kk_expenses", []));
-  const [settings, setSettings]     = useState(() => load("kk_settings", INITIAL_SETTINGS));
+  const [orders, setOrders]         = useState([]); // sumber: Supabase (orders + order_items)
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [expenses, setExpenses]     = useState([]); // sumber: Supabase (expenses)
+  const [expensesLoading, setExpensesLoading] = useState(true);
+  const [settings, setSettings]     = useState(INITIAL_SETTINGS); // sumber: Supabase (outlets)
   const [cart, setCart]             = useState([]);
   const [category, setCategory]     = useState("Semua");
   const [search, setSearch]         = useState("");
@@ -821,7 +1184,7 @@ export default function KasirApp() {
   const [reportRange, setReportRange] = useState({ from: "", to: "" });
   const [showScanner, setShowScanner] = useState(null);
   const [showQris, setShowQris] = useState(false);
-  const [nextOrderNumber, setNextOrderNumber] = useState(() => load("kk_order_counter", 1));
+  const [nextOrderNumber, setNextOrderNumber] = useState(1); // fallback saja — nomor asli dari Supabase
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Jam real-time di header (satu-satunya interval, tidak dobel)
@@ -830,12 +1193,12 @@ export default function KasirApp() {
     return () => clearInterval(timer);
   }, []);
 
-  // persist (produk & stok TIDAK di-persist lokal lagi — sumbernya Supabase)
+  // persist (hanya sesi login yang di-persist lokal; produk/stok/order/
+  // keuangan/setting semuanya sumber kebenarannya Supabase sekarang)
   useEffect(() => { save("kk_user", user); }, [user]);
-  useEffect(() => { save("kk_orders", orders); }, [orders]);
-  useEffect(() => { save("kk_expenses", expenses); }, [expenses]);
-  useEffect(() => { save("kk_settings", settings); }, [settings]);
-  useEffect(() => { save("kk_order_counter", nextOrderNumber); }, [nextOrderNumber]);
+
+  // Sinkronkan editSettings tiap kali settings (hasil fetch Supabase) berubah
+  useEffect(() => { setEditSettings(settings); }, [settings]);
 
   // Cabang yang sedang "aktif" untuk operasi produk/stok:
   // - admin_cabang & kasir: selalu outlet mereka sendiri
@@ -917,6 +1280,100 @@ export default function KasirApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, activeOutletId]);
 
+  // Sinkronkan settings toko (nama/alamat/telp/pajak/footer/QR) dari
+  // Supabase (outlets) — sumber kebenarannya sekarang di sana, bukan
+  // localStorage lagi. Dipakai juga sebagai preview total di keranjang
+  // biar match dengan yang dihitung server saat create_order dipanggil.
+  const fetchOutletSettings = async () => {
+    if (!activeOutletId) return;
+    const { data } = await supabase
+      .from('outlets')
+      .select('name, address, phone, tax_rate, footer_note, qr_image_url')
+      .eq('id', activeOutletId)
+      .single();
+    if (data) {
+      setSettings({
+        storeName: data.name || "",
+        storeAddress: data.address || "",
+        storePhone: data.phone || "",
+        taxRate: Number(data.tax_rate) || 0,
+        footerNote: data.footer_note || "",
+        qrImage: data.qr_image_url || "",
+      });
+    }
+  };
+  useEffect(() => { fetchOutletSettings(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [activeOutletId]);
+
+  // Riwayat transaksi (orders + order_items) dari Supabase, per cabang aktif
+  const fetchOrders = async () => {
+    if (!activeOutletId) { setOrders([]); setOrdersLoading(false); return; }
+    setOrdersLoading(true);
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*, order_items(*), cashier:cashier_id(full_name)')
+      .eq('outlet_id', activeOutletId)
+      .order('created_at', { ascending: false })
+      .limit(500);
+    if (error) { console.error(error); setOrdersLoading(false); return; }
+    const mapped = (data || []).map(o => ({
+      id: o.id,
+      orderNumber: o.order_number,
+      items: (o.order_items || []).map(it => ({ id: it.product_id, name: it.name_snapshot, icon: it.icon_snapshot || "🛒", price: Number(it.price_snapshot), qty: it.qty })),
+      subtotal: Number(o.subtotal),
+      discount: Number(o.discount_pct),
+      discAmt: Number(o.discount_amt),
+      taxAmt: Number(o.tax_amt),
+      total: Number(o.total),
+      pay: Number(o.pay_amount),
+      change: Number(o.change_amount),
+      date: new Date(o.created_at).toLocaleString("id-ID"),
+      cashierName: o.cashier?.full_name || "-",
+      paymentMethod: o.payment_method,
+    }));
+    setOrders(mapped);
+    setOrdersLoading(false);
+  };
+  useEffect(() => { fetchOrders(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [activeOutletId]);
+  useEffect(() => {
+    if (!activeOutletId) return;
+    const channel = supabase
+      .channel('realtime-orders-' + activeOutletId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `outlet_id=eq.${activeOutletId}` }, () => fetchOrders())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOutletId]);
+
+  // Keuangan (expenses) dari Supabase, per cabang aktif
+  const fetchExpenses = async () => {
+    if (!activeOutletId) { setExpenses([]); setExpensesLoading(false); return; }
+    setExpensesLoading(true);
+    const { data, error } = await supabase
+      .from('expenses')
+      .select('*')
+      .eq('outlet_id', activeOutletId)
+      .order('created_at', { ascending: false });
+    if (error) { console.error(error); setExpensesLoading(false); return; }
+    setExpenses((data || []).map(e => ({
+      id: e.id,
+      type: e.type,
+      desc: e.description,
+      amount: Number(e.amount),
+      date: e.expense_date ? new Date(e.expense_date).toLocaleDateString("id-ID") : new Date(e.created_at).toLocaleString("id-ID"),
+    })));
+    setExpensesLoading(false);
+  };
+  useEffect(() => { fetchExpenses(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [activeOutletId]);
+  useEffect(() => {
+    if (!activeOutletId) return;
+    const channel = supabase
+      .channel('realtime-expenses-' + activeOutletId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses', filter: `outlet_id=eq.${activeOutletId}` }, () => fetchExpenses())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOutletId]);
+
   const todayStr = () => new Date().toISOString().split('T')[0];
 
   // Cek status absensi hari ini setiap kali user login/refresh
@@ -960,10 +1417,19 @@ export default function KasirApp() {
 
   if (!user) return <LoginPage onLogin={u => { setUser(u); setTab("kasir"); }} />;
 
-  const canAdmin = user.role === "admin";
+  const isSuperAdmin = user.role === "admin"; // super_admin dipetakan jadi "admin" saat login
+  const isAdminCabang = user.role === "admin_cabang";
+  const canManage = isSuperAdmin || isAdminCabang; // kelola cabang: Produk, Stok, Keuangan, Laporan, Shift, Mutasi Stok, Setting, User
+  const canAdmin = isSuperAdmin; // khusus lintas-cabang: Monitoring
 
-  const TABS = canAdmin
-    ? [["kasir","🛒","Kasir"],["produk","📦","Produk"],["stok","📊","Stok"],["keuangan","💰","Keuangan"],["riwayat","📋","Riwayat"],["laporan","📈","Laporan"],["monitoring","🧭","Monitoring"],["shift","🕒","Shift"],["setting","⚙️","Setting"]]
+  const TABS = canManage
+    ? [
+        ["kasir","🛒","Kasir"],["produk","📦","Produk"],["stok","📊","Stok"],
+        ["mutasi","🔀","Mutasi Stok"],["keuangan","💰","Keuangan"],["riwayat","📋","Riwayat"],
+        ["laporan","📈","Laporan"],
+        ...(isSuperAdmin ? [["monitoring","🧭","Monitoring"]] : []),
+        ["shift","🕒","Shift"],["user","👤","User"],["setting","⚙️","Setting"],
+      ]
     : [["kasir","🛒","Kasir"],["riwayat","📋","Riwayat"]];
 
   // ── KASIR LOGIC ──
@@ -1002,59 +1468,79 @@ export default function KasirApp() {
   const total    = subtotal - discAmt + taxAmt;
   const kembalian = Math.max(0, Number(payAmount) - total);
 
-  // ⚠️ SEMENTARA / NON-ATOMIC: mengurangi stok Supabase setelah bayar
-  // berdasarkan angka stok yang terakhir di-load ke browser. Ini BELUM
-  // aman kalau ada 2 kasir di outlet yang sama transaksi bersamaan persis
-  // (race condition) — untuk itu idealnya pakai RPC atomic `create_order`
-  // yang sudah pernah kamu buat di 02_functions.sql. Begitu file itu
-  // di-share, saya gantikan bagian ini supaya pengurangan stok + insert
-  // order/order_items terjadi dalam satu transaksi atomic di database.
-  const decrementStockAfterSale = async (cartItems) => {
-    for (const item of cartItems) {
-      const newStock = Math.max(0, (item.stock || 0) - item.qty);
-      await supabase.from('outlet_stock').upsert(
-        { outlet_id: activeOutletId, product_id: item.id, stock: newStock, min_stock: item.minStock ?? 10 },
-        { onConflict: 'outlet_id,product_id' }
-      );
-    }
-    fetchProducts();
-  };
+  // Checkout SEKARANG lewat RPC atomic `create_order` (dari 02_functions.sql):
+  // nomor struk + insert order + insert order_items + potong stok terjadi
+  // dalam satu transaksi database. Kalau stok tidak cukup atau uang kurang,
+  // function ini akan menolak (raise exception) sebelum apa pun tersimpan —
+  // jadi tidak mungkin data setengah-jadi.
+  const processPayment = async ({ paymentMethod, payAmountValue }) => {
+    if (cart.length === 0) { showToast("Keranjang kosong!", "error"); return null; }
+    if (!activeOutletId) { showToast("Outlet tidak diketahui, silakan login ulang.", "error"); return null; }
 
-  const handlePay = () => {
-    if (cart.length === 0) return showToast("Keranjang kosong!", "error");
-    if (Number(payAmount) < total) return showToast("Uang tidak cukup!", "error");
+    const items = cart.map(i => ({ product_id: i.id, qty: i.qty }));
+
+    const { data: orderId, error } = await supabase.rpc('create_order', {
+      p_outlet_id: activeOutletId,
+      p_cashier_id: user.id,
+      p_items: items,
+      p_discount_pct: discount,
+      p_payment_method: paymentMethod,
+      p_pay_amount: payAmountValue,
+    });
+
+    if (error) {
+      // Pesan dari raise exception di SQL (mis. "Stok X tidak cukup di cabang ini")
+      // akan muncul apa adanya di error.message.
+      showToast("Gagal memproses pembayaran: " + error.message, "error");
+      return null;
+    }
+
+    // Ambil data final dari database (nomor struk, subtotal, pajak, dst sudah
+    // dihitung server-side sesuai outlets.tax_rate — bisa saja beda tipis dari
+    // preview lokal kalau tax_rate di Supabase belum sinkron).
+    const { data: savedOrder } = await supabase.from('orders').select('*').eq('id', orderId).single();
+
     const order = {
-      id: Date.now(), orderNumber: nextOrderNumber, items: [...cart], subtotal, discount, discAmt, taxAmt, total,
-      pay: Number(payAmount), change: kembalian, date: now(), cashierName: user.name,
+      id: orderId,
+      orderNumber: savedOrder?.order_number ?? nextOrderNumber,
+      items: [...cart],
+      subtotal: savedOrder?.subtotal ?? subtotal,
+      discount,
+      discAmt: savedOrder?.discount_amt ?? discAmt,
+      taxAmt: savedOrder?.tax_amt ?? taxAmt,
+      total: savedOrder?.total ?? total,
+      pay: savedOrder?.pay_amount ?? payAmountValue,
+      change: savedOrder?.change_amount ?? Math.max(0, payAmountValue - total),
+      date: now(),
+      cashierName: user.name,
+      ...(paymentMethod === "QRIS" ? { paymentMethod: "QRIS" } : {}),
     };
-    setOrders(prev => [order, ...prev]);
-    setNextOrderNumber(n => n + 1);
+
     setProducts(prev => prev.map(p => {
       const cartItem = cart.find(i => i.id === p.id);
       if (!cartItem) return p;
       return { ...p, stock: Math.max(0, (p.stock || 0) - cartItem.qty) };
     }));
-    decrementStockAfterSale(cart);
+    fetchProducts(); // sinkronkan ulang dengan angka stok asli dari Supabase
+    fetchOrders();    // riwayat & laporan langsung ikut update (realtime juga akan trigger ini)
+    return order;
+  };
+
+  const handlePay = async () => {
+    if (cart.length === 0) return showToast("Keranjang kosong!", "error");
+    if (Number(payAmount) < total) return showToast("Uang tidak cukup!", "error");
+    const order = await processPayment({ paymentMethod: "Tunai", payAmountValue: Number(payAmount) });
+    if (!order) return;
     setShowReceipt(order);
     setCart([]); setPayAmount(""); setDiscount(0);
     showToast("Pembayaran berhasil! 🎉");
   };
 
-  const handlePayQris = () => {
+  const handlePayQris = async () => {
     if (cart.length === 0) return showToast("Keranjang kosong!", "error");
     if (!settings.qrImage) return showToast("QR pembayaran belum diatur di menu Setting!", "error");
-    const order = {
-      id: Date.now(), orderNumber: nextOrderNumber, items: [...cart], subtotal, discount, discAmt, taxAmt, total,
-      pay: total, change: 0, date: now(), cashierName: user.name, paymentMethod: "QRIS",
-    };
-    setOrders(prev => [order, ...prev]);
-    setNextOrderNumber(n => n + 1);
-    setProducts(prev => prev.map(p => {
-      const cartItem = cart.find(i => i.id === p.id);
-      if (!cartItem) return p;
-      return { ...p, stock: Math.max(0, (p.stock || 0) - cartItem.qty) };
-    }));
-    decrementStockAfterSale(cart);
+    const order = await processPayment({ paymentMethod: "QRIS", payAmountValue: total });
+    if (!order) return;
     setShowQris(false);
     setShowReceipt(order);
     setCart([]); setPayAmount(""); setDiscount(0);
@@ -1205,12 +1691,28 @@ export default function KasirApp() {
   };
 
 
-  // ── KEUANGAN LOGIC ──
-  const addExpense = () => {
+  // ── KEUANGAN LOGIC (Supabase: expenses) ──
+  const addExpense = async () => {
     if (!newExpense.desc || !newExpense.amount) return showToast("Isi deskripsi & jumlah!", "error");
-    setExpenses(prev => [{ ...newExpense, id: Date.now(), amount: Number(newExpense.amount), date: newExpense.date || now() }, ...prev]);
+    if (!activeOutletId) return showToast("Outlet tidak diketahui, silakan login ulang.", "error");
+    const { error } = await supabase.from('expenses').insert([{
+      outlet_id: activeOutletId,
+      type: newExpense.type,
+      description: newExpense.desc,
+      amount: Number(newExpense.amount),
+      created_by: user.id,
+      expense_date: newExpense.date ? newExpense.date.slice(0, 10) : todayStr(),
+    }]);
+    if (error) return showToast("Gagal mencatat: " + error.message, "error");
     setNewExpense({ type: "pengeluaran", desc: "", amount: "", date: "" });
     showToast(newExpense.type === "pengeluaran" ? "Pengeluaran dicatat!" : "Pendapatan dicatat!");
+    fetchExpenses();
+  };
+
+  const deleteExpense = async (id) => {
+    const { error } = await supabase.from('expenses').delete().eq('id', id);
+    if (error) return showToast("Gagal hapus: " + error.message, "error");
+    fetchExpenses();
   };
 
   const totalIncome   = orders.reduce((s, o) => s + o.total, 0) + expenses.filter(e => e.type === "pendapatan").reduce((s, e) => s + e.amount, 0);
@@ -1507,7 +2009,7 @@ export default function KasirApp() {
       )}
 
       {/* ── TAB: PRODUK ── */}
-      {tab === "produk" && canAdmin && (
+      {tab === "produk" && canManage && (
         <div className="tab-page-wrap" style={{ maxWidth: 960, margin: "0 auto", padding: 24 }}>
           {user.role === "admin" && (
             <div style={{ background: "#ebf8ff", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -1609,7 +2111,7 @@ export default function KasirApp() {
       )}
 
       {/* ── TAB: STOK ── */}
-      {tab === "stok" && canAdmin && (
+      {tab === "stok" && canManage && (
         <div className="tab-page-wrap" style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
           {user.role === "admin" && (
             <div style={{ background: "#ebf8ff", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -1722,7 +2224,7 @@ export default function KasirApp() {
       )}
 
       {/* ── TAB: KEUANGAN ── */}
-      {tab === "keuangan" && canAdmin && (
+      {tab === "keuangan" && canManage && (
         <div className="tab-page-wrap" style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
           <div className="stat-grid-3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 20 }}>
             {[
@@ -1753,7 +2255,9 @@ export default function KasirApp() {
           </div>
           <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden" }}>
             <div style={{ padding: "14px 18px", borderBottom: "1px solid #e2e8f0", fontWeight: 700, color: "#1a365d" }}>📋 Riwayat Catatan Keuangan</div>
-            {expenses.length === 0 ? (
+            {expensesLoading ? (
+              <div style={{ textAlign: "center", padding: 40, color: "#a0aec0" }}>⏳ Memuat...</div>
+            ) : expenses.length === 0 ? (
               <div style={{ textAlign: "center", padding: 40, color: "#a0aec0" }}><div style={{ fontSize: 40 }}>📝</div><div>Belum ada catatan</div></div>
             ) : expenses.map(e => (
               <div key={e.id} style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "12px 18px", borderBottom: "1px solid #f7fafc" }}>
@@ -1765,7 +2269,7 @@ export default function KasirApp() {
                   <div style={{ fontWeight: 700, color: e.type === "pengeluaran" ? "#e53e3e" : "#276749", fontSize: 15 }}>
                     {e.type === "pengeluaran" ? "−" : "+"}{fmt(e.amount)}
                   </div>
-                  <button onClick={() => setExpenses(prev => prev.filter(x => x.id !== e.id))} style={{ ...S.smBtn, background: "#fff5f5", color: "#e53e3e" }}>🗑️</button>
+                  <button onClick={() => deleteExpense(e.id)} style={{ ...S.smBtn, background: "#fff5f5", color: "#e53e3e" }}>🗑️</button>
                 </div>
               </div>
             ))}
@@ -1776,7 +2280,7 @@ export default function KasirApp() {
       {/* ── TAB: RIWAYAT ── */}
       {tab === "riwayat" && (
         <div style={{ maxWidth: 860, margin: "0 auto", padding: 24 }}>
-          {canAdmin && (
+          {canManage && (
             <div className="stat-grid-3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 20 }}>
               {[
                 ["💰 Total Pendapatan", fmt(orders.reduce((s,o)=>s+o.total,0)), "#c6f6d5", "#276749"],
@@ -1790,7 +2294,9 @@ export default function KasirApp() {
               ))}
             </div>
           )}
-          {orders.length === 0 ? (
+          {ordersLoading ? (
+            <div style={{ textAlign: "center", padding: 40, color: "#a0aec0" }}>⏳ Memuat riwayat...</div>
+          ) : orders.length === 0 ? (
             <div style={{ textAlign: "center", padding: 60, color: "#a0aec0", background: "#fff", borderRadius: 14 }}>
               <div style={{ fontSize: 48 }}>📋</div><div>Belum ada transaksi</div>
             </div>
@@ -1811,7 +2317,7 @@ export default function KasirApp() {
       )}
 
       {/* ── TAB: LAPORAN ── */}
-      {tab === "laporan" && canAdmin && (
+      {tab === "laporan" && canManage && (
         <div style={{ maxWidth: 860, margin: "0 auto", padding: 24 }}>
           <div style={{ background: "#fff", borderRadius: 14, padding: 24, marginBottom: 20, border: "1px solid #e2e8f0" }}>
             <div style={{ fontWeight: 700, fontSize: 16, color: "#1a365d", marginBottom: 16 }}>📈 Ekspor & Cetak Laporan</div>
@@ -1861,6 +2367,7 @@ export default function KasirApp() {
           </div>
 
           <MarginProdukSection />
+          <AuditLogSection />
         </div>
       )}
 
@@ -1868,11 +2375,25 @@ export default function KasirApp() {
       {tab === "monitoring" && canAdmin && <AdminDashboard />}
 
       {/* ── TAB: SHIFT (KELOLA JADWAL & ASSIGN KE KARYAWAN) ── */}
-      {tab === "shift" && canAdmin && <ShiftManagement user={user} />}
+      {tab === "shift" && canManage && <ShiftManagement user={user} />}
+
+      {/* ── TAB: USER (MANAJEMEN KARYAWAN) ── */}
+      {tab === "user" && canManage && <UserManagement user={user} isSuperAdmin={isSuperAdmin} activeOutletId={activeOutletId} outletsList={outletsList} />}
+
+      {/* ── TAB: MUTASI STOK ── */}
+      {tab === "mutasi" && canManage && <StockTransferPanel user={user} isSuperAdmin={isSuperAdmin} activeOutletId={activeOutletId} outletsList={outletsList} products={products} showToast={showToast} />}
 
       {/* ── TAB: SETTING ── */}
-      {tab === "setting" && canAdmin && (
+      {tab === "setting" && canManage && (
         <div style={{ maxWidth: 620, margin: "0 auto", padding: 24 }}>
+          {isSuperAdmin && (
+            <div style={{ background: "#ebf8ff", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "#2c5282" }}>🏬 Pengaturan untuk cabang:</span>
+              <select value={selectedOutletId} onChange={e => setSelectedOutletId(e.target.value)} style={{ ...S.inp, width: 240 }}>
+                {outletsList.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+              </select>
+            </div>
+          )}
           <div style={{ background: "#fff", borderRadius: 14, padding: 24, border: "1px solid #e2e8f0" }}>
             <div style={{ fontWeight: 700, fontSize: 16, color: "#1a365d", marginBottom: 20 }}>⚙️ Pengaturan Toko</div>
             {[
@@ -1888,30 +2409,40 @@ export default function KasirApp() {
               </div>
             ))}
             <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-              <button onClick={() => { setSettings(editSettings); showToast("Pengaturan disimpan! ✅"); }} style={{ ...S.btn, background: "#2b6cb0", color: "#fff" }}>💾 Simpan Pengaturan</button>
-              <button onClick={() => { if (window.confirm("Hapus riwayat transaksi & catatan keuangan lokal? (Produk & stok di Supabase TIDAK terpengaruh — kelola itu lewat tab Produk/Stok atau Supabase langsung)")) { setOrders([]); setExpenses([]); setNextOrderNumber(1); showToast("Riwayat lokal direset!", "error"); }}} style={{ ...S.btn, background: "#fff5f5", color: "#e53e3e" }}>🗑️ Reset Riwayat & Keuangan Lokal</button>
+              <button onClick={async () => {
+                const { error } = await supabase.from('outlets').update({
+                  name: editSettings.storeName,
+                  address: editSettings.storeAddress,
+                  phone: editSettings.storePhone,
+                  tax_rate: Number(editSettings.taxRate) || 0,
+                  footer_note: editSettings.footerNote,
+                }).eq('id', activeOutletId);
+                if (error) return showToast("Gagal simpan: " + error.message, "error");
+                showToast("Pengaturan disimpan! ✅");
+                fetchOutletSettings();
+              }} style={{ ...S.btn, background: "#2b6cb0", color: "#fff" }}>💾 Simpan Pengaturan</button>
+              <button onClick={() => { fetchProducts(); fetchOrders(); fetchExpenses(); fetchOutletSettings(); showToast("Data dimuat ulang dari Supabase!"); }} style={{ ...S.btn, background: "#ebf8ff", color: "#2b6cb0" }}>🔄 Muat Ulang Semua Data</button>
             </div>
             <div style={{ marginTop: 24, padding: "14px 16px", background: "#f7fafc", borderRadius: 10, border: "1px solid #e2e8f0" }}>
-              <div style={{ fontWeight: 700, fontSize: 14, color: "#1a365d", marginBottom: 8 }}>👥 Daftar Pengguna</div>
-              {USERS.map(u => (
-                <div key={u.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #e2e8f0", fontSize: 13 }}>
-                  <span>{u.role === "admin" ? "👑" : "💼"} <strong>{u.name}</strong> ({u.username})</span>
-                  <span style={{ color: "#718096" }}>{u.role}</span>
-                </div>
-              ))}
-              <div style={{ fontSize: 11, color: "#a0aec0", marginTop: 8 }}>* Manajemen pengguna lanjutan tersedia di versi premium.</div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: "#1a365d", marginBottom: 4 }}>👥 Manajemen Karyawan</div>
+              <div style={{ fontSize: 12, color: "#718096" }}>Tambah, aktifkan, dan atur peran karyawan sekarang ada di tab <strong>👤 User</strong>.</div>
             </div>
           </div>
 
           <div style={{ background: "#fff", borderRadius: 14, padding: 24, border: "1px solid #e2e8f0", marginTop: 20 }}>
             <div style={{ fontWeight: 700, fontSize: 16, color: "#1a365d", marginBottom: 6 }}>📱 QR Pembayaran (QRIS)</div>
-            <div style={{ fontSize: 12, color: "#718096", marginBottom: 16 }}>Unggah gambar QR code milik Anda agar muncul saat pelanggan memilih pembayaran QRIS di kasir.</div>
-            {editSettings.qrImage ? (
+            <div style={{ fontSize: 12, color: "#718096", marginBottom: 16 }}>Unggah gambar QR code milik Anda agar muncul saat pelanggan memilih pembayaran QRIS di kasir. Disimpan di Supabase Storage.</div>
+            {settings.qrImage ? (
               <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 14 }}>
-                <img src={editSettings.qrImage} alt="QR Pembayaran" style={{ width: 120, height: 120, objectFit: "contain", borderRadius: 10, border: "1.5px solid #e2e8f0" }} />
+                <img src={settings.qrImage} alt="QR Pembayaran" style={{ width: 120, height: 120, objectFit: "contain", borderRadius: 10, border: "1.5px solid #e2e8f0" }} />
                 <div>
                   <div style={{ fontSize: 13, color: "#276749", fontWeight: 600, marginBottom: 8 }}>✅ QR aktif</div>
-                  <button onClick={() => setEditSettings(p => ({ ...p, qrImage: "" }))} style={{ ...S.smBtn, background: "#fff5f5", color: "#e53e3e" }}>🗑️ Hapus QR</button>
+                  <button onClick={async () => {
+                    const { error } = await supabase.from('outlets').update({ qr_image_url: null }).eq('id', activeOutletId);
+                    if (error) return showToast("Gagal hapus: " + error.message, "error");
+                    showToast("QR dihapus!", "error");
+                    fetchOutletSettings();
+                  }} style={{ ...S.smBtn, background: "#fff5f5", color: "#e53e3e" }}>🗑️ Hapus QR</button>
                 </div>
               </div>
             ) : (
@@ -1920,18 +2451,21 @@ export default function KasirApp() {
             <input
               type="file"
               accept="image/*"
-              onChange={e => {
+              onChange={async e => {
                 const file = e.target.files && e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = () => setEditSettings(p => ({ ...p, qrImage: reader.result }));
-                reader.readAsDataURL(file);
+                if (!file || !activeOutletId) return;
+                const ext = file.name.split('.').pop();
+                const path = `${activeOutletId}/qris.${ext}`;
+                const { error: upErr } = await supabase.storage.from('qris').upload(path, file, { upsert: true, cacheControl: '3600' });
+                if (upErr) return showToast("Gagal unggah QR: " + upErr.message, "error");
+                const { data: pub } = supabase.storage.from('qris').getPublicUrl(path);
+                const { error: dbErr } = await supabase.from('outlets').update({ qr_image_url: pub.publicUrl }).eq('id', activeOutletId);
+                if (dbErr) return showToast("QR terunggah, tapi gagal simpan URL: " + dbErr.message, "error");
+                showToast("QR pembayaran disimpan! ✅");
+                fetchOutletSettings();
               }}
               style={{ fontSize: 13 }}
             />
-            <div style={{ marginTop: 14 }}>
-              <button onClick={() => { setSettings(editSettings); showToast("QR pembayaran disimpan! ✅"); }} style={{ ...S.btn, background: "#2b6cb0", color: "#fff" }}>💾 Simpan QR</button>
-            </div>
           </div>
         </div>
       )}
