@@ -1155,6 +1155,174 @@ function StockTransferPanel({ user, isSuperAdmin, activeOutletId, outletsList, p
   );
 }
 
+// ── GAJI KARYAWAN (payroll bulanan + potongan telat/alpha) ───────────────────
+function PayrollSection({ user, isSuperAdmin, activeOutletId }) {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [report, setReport] = useState([]);
+  const [settingsList, setSettingsList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState(null);
+  const [draft, setDraft] = useState({});
+
+  const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 2500); };
+
+  const fetchAll = async () => {
+    if (!activeOutletId) return;
+    setLoading(true);
+    const [{ data: reportData, error: reportErr }, { data: settingsData }] = await Promise.all([
+      supabase.rpc('get_payroll_report', { p_outlet_id: activeOutletId, p_year: year, p_month: month }),
+      supabase.from('payroll_settings').select('*'),
+    ]);
+    if (reportErr) console.error(reportErr);
+    setReport(reportData || []);
+    setSettingsList(settingsData || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [activeOutletId, year, month]);
+
+  const getSetting = (userId) => settingsList.find(s => s.user_id === userId) || { gaji_pokok: 0, potongan_per_menit_telat: 0, hari_kerja_per_bulan: 26 };
+
+  const saveSetting = async (userId) => {
+    const d = draft[userId];
+    if (!d) return;
+    const { error } = await supabase.from('payroll_settings').upsert({
+      user_id: userId,
+      gaji_pokok: Number(d.gaji_pokok ?? getSetting(userId).gaji_pokok),
+      potongan_per_menit_telat: Number(d.potongan_per_menit_telat ?? getSetting(userId).potongan_per_menit_telat),
+      hari_kerja_per_bulan: Number(d.hari_kerja_per_bulan ?? getSetting(userId).hari_kerja_per_bulan),
+    });
+    if (error) return showToast("Gagal simpan: " + error.message, "error");
+    showToast("Pengaturan gaji disimpan!");
+    setDraft(d2 => { const c = { ...d2 }; delete c[userId]; return c; });
+    fetchAll();
+  };
+
+  const exportPayrollExcel = () => {
+    const wb = XLSX.utils.book_new();
+    const rows = report.map(r => ({
+      "Karyawan": r.nama_karyawan,
+      "Gaji Pokok": r.gaji_pokok,
+      "Hari Kerja Target": r.hari_kerja_target,
+      "Hari Hadir": r.hari_hadir,
+      "Hari Alpha": r.hari_alpha,
+      "Total Menit Telat": r.total_menit_telat,
+      "Potongan Telat": r.potongan_telat,
+      "Potongan Alpha": r.potongan_alpha,
+      "Gaji Bersih": r.gaji_bersih,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = autoFitColumns(rows, [1, 5, 6, 7]);
+    applyRupiahFormat(ws, ["B", "G", "H", "I"], 2, rows.length + 1);
+    XLSX.utils.book_append_sheet(wb, ws, `Gaji ${month}-${year}`);
+    XLSX.writeFile(wb, `Gaji_Karyawan_${year}-${String(month).padStart(2, "0")}.xlsx`);
+    showToast("Laporan gaji diunduh! 💵");
+  };
+
+  const totalGajiBersih = report.reduce((s, r) => s + Number(r.gaji_bersih || 0), 0);
+
+  return (
+    <div className="tab-page-wrap" style={{ maxWidth: 1000, margin: "0 auto", padding: 24 }}>
+      {toast && (
+        <div style={{ position: "fixed", top: 16, right: 16, zIndex: 9999, background: toast.type === "error" ? "#fed7d7" : "#c6f6d5", color: toast.type === "error" ? "#c53030" : "#276749", padding: "10px 18px", borderRadius: 10, fontWeight: 600, boxShadow: "0 4px 20px rgba(0,0,0,0.15)", fontSize: 14 }}>
+          {toast.type === "error" ? "❌" : "✅"} {toast.msg}
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 16 }}>
+        <div style={{ fontWeight: 700, fontSize: 18, color: "#1a365d" }}>💵 Gaji Karyawan</div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <select value={month} onChange={e => setMonth(Number(e.target.value))} style={{ ...S.inp, width: 130 }}>
+            {["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"].map((m, i) => (
+              <option key={m} value={i + 1}>{m}</option>
+            ))}
+          </select>
+          <input type="number" value={year} onChange={e => setYear(Number(e.target.value))} style={{ ...S.inp, width: 90 }} />
+          <button onClick={exportPayrollExcel} style={{ ...S.btn, background: "#276749", color: "#fff" }}>📊 Unduh Excel</button>
+        </div>
+      </div>
+
+      {!isSuperAdmin && (
+        <div style={{ background: "#fffaf0", border: "1px solid #feebc8", borderRadius: 12, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "#c05621" }}>
+          🔒 Gaji pokok & tarif potongan hanya bisa diatur oleh <strong>Admin Pusat</strong>. Kamu bisa lihat laporan gaji cabangmu (read-only).
+        </div>
+      )}
+
+      <div style={{ background: "#ebf8ff", borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: "#2c5282" }}>Total Gaji Bersih (semua karyawan, bulan ini)</div>
+        <div style={{ fontWeight: 800, fontSize: 24, color: "#1a365d" }}>{fmt(totalGajiBersih)}</div>
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+        <div className="data-table-wrap" style={{ overflowX: "auto" }}>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: 30, color: "#a0aec0" }}>⏳ Memuat...</div>
+          ) : report.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 30, color: "#a0aec0" }}>
+              Belum ada data gaji. {isSuperAdmin ? "Atur gaji pokok karyawan di bawah dulu." : ""}
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#ebf8ff", color: "#2c5282" }}>
+                  {["Karyawan","Gaji Pokok","Hadir","Alpha","Menit Telat","Potongan","Gaji Bersih"].map(h => (
+                    <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {report.map((r, i) => (
+                  <tr key={r.user_id} style={{ borderTop: "1px solid #f0f4f8", background: i % 2 === 0 ? "#fff" : "#f7fafc" }}>
+                    <td style={{ padding: "9px 12px", fontWeight: 600, fontSize: 13 }}>{r.nama_karyawan}</td>
+                    <td style={{ padding: "9px 12px", fontSize: 13 }}>{fmt(r.gaji_pokok)}</td>
+                    <td style={{ padding: "9px 12px", fontSize: 13 }}>{r.hari_hadir}/{r.hari_kerja_target}</td>
+                    <td style={{ padding: "9px 12px", fontSize: 13, color: r.hari_alpha > 0 ? "#c05621" : "#718096" }}>{r.hari_alpha}</td>
+                    <td style={{ padding: "9px 12px", fontSize: 13, color: r.total_menit_telat > 0 ? "#c05621" : "#718096" }}>{r.total_menit_telat}</td>
+                    <td style={{ padding: "9px 12px", fontSize: 13, color: "#e53e3e" }}>-{fmt(Number(r.potongan_telat) + Number(r.potongan_alpha))}</td>
+                    <td style={{ padding: "9px 12px", fontSize: 13, fontWeight: 700, color: "#276749" }}>{fmt(r.gaji_bersih)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {isSuperAdmin && (
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden", marginTop: 20 }}>
+          <div style={{ padding: "14px 18px", borderBottom: "1px solid #e2e8f0", fontWeight: 700, color: "#1a365d" }}>⚙️ Atur Gaji Pokok & Potongan per Karyawan</div>
+          {report.map(r => {
+            const s = getSetting(r.user_id);
+            return (
+              <div key={r.user_id} style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "12px 18px", borderBottom: "1px solid #f7fafc" }}>
+                <div style={{ fontWeight: 700, fontSize: 14, minWidth: 140 }}>{r.nama_karyawan}</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <div>
+                    <label style={{ fontSize: 10, color: "#718096" }}>Gaji Pokok</label>
+                    <input type="number" defaultValue={s.gaji_pokok} onChange={e => setDraft(p => ({ ...p, [r.user_id]: { ...p[r.user_id], gaji_pokok: e.target.value } }))} style={{ ...S.inp, width: 140 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 10, color: "#718096" }}>Potongan/menit telat</label>
+                    <input type="number" defaultValue={s.potongan_per_menit_telat} onChange={e => setDraft(p => ({ ...p, [r.user_id]: { ...p[r.user_id], potongan_per_menit_telat: e.target.value } }))} style={{ ...S.inp, width: 130 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 10, color: "#718096" }}>Hari kerja/bulan</label>
+                    <input type="number" defaultValue={s.hari_kerja_per_bulan} onChange={e => setDraft(p => ({ ...p, [r.user_id]: { ...p[r.user_id], hari_kerja_per_bulan: e.target.value } }))} style={{ ...S.inp, width: 100 }} />
+                  </div>
+                  <button onClick={() => saveSetting(r.user_id)} style={{ ...S.smBtn, background: "#2b6cb0", color: "#fff", alignSelf: "flex-end" }}>💾 Simpan</button>
+                </div>
+              </div>
+            );
+          })}
+          {report.length === 0 && <div style={{ padding: 20, color: "#a0aec0", fontSize: 13, textAlign: "center" }}>Tidak ada karyawan aktif di cabang ini.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function KasirApp() {
   const [user, setUser]             = useState(() => load("kk_user", null));
@@ -1429,7 +1597,7 @@ export default function KasirApp() {
         ["mutasi","🔀","Mutasi Stok"],["keuangan","💰","Keuangan"],["riwayat","📋","Riwayat"],
         ["laporan","📈","Laporan"],
         ...(isSuperAdmin ? [["monitoring","🧭","Monitoring"]] : []),
-        ["shift","🕒","Shift"],
+        ["shift","🕒","Shift"],["gaji","💵","Gaji"],
         ...(isSuperAdmin ? [["user","👤","User"]] : []),
         ["setting","⚙️","Setting"],
       ]
@@ -2496,6 +2664,9 @@ export default function KasirApp() {
 
       {/* ── TAB: SHIFT (KELOLA JADWAL & ASSIGN KE KARYAWAN) ── */}
       {tab === "shift" && canManage && <ShiftManagement user={user} />}
+
+      {/* ── TAB: GAJI ── */}
+      {tab === "gaji" && canManage && <PayrollSection user={user} isSuperAdmin={isSuperAdmin} activeOutletId={activeOutletId} />}
 
       {/* ── TAB: USER (MANAJEMEN KARYAWAN) ── */}
       {tab === "user" && isSuperAdmin && <UserManagement user={user} isSuperAdmin={isSuperAdmin} activeOutletId={activeOutletId} outletsList={outletsList} />}
